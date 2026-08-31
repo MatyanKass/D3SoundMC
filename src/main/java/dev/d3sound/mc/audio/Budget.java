@@ -20,8 +20,20 @@ public final class Budget {
 	public volatile float targetLoad = 0.70f;
 	/** Выше этой — резко сбрасываем. */
 	public volatile float panicLoad = 0.88f;
-	/** Верхняя граница времени одного прогона, мс. */
-	public volatile float maxSolveMs = 12f;
+	/**
+	 * Жёсткий потолок времени одного прогона, мс.
+	 *
+	 * Это уже не про нагрузку, а про запаздывание: решение старше этого
+	 * времени описывает мир, которого вокруг игрока может не быть.
+	 */
+	public volatile float maxSolveMs = 45f;
+	/**
+	 * Сколько процессора движку позволено съесть самому, долей от всего
+	 * процессора. Считается честно: время прогона делённое на период между
+	 * прогонами даёт занятую долю ядра, а деление на число ядер переводит её
+	 * в долю всей машины.
+	 */
+	public volatile float ownShareLimit = 0.40f;
 
 	/** Ручное качество 0…1; отрицательное значение — режим «Авто». */
 	public volatile float manualQuality = -1f;
@@ -38,6 +50,8 @@ public final class Budget {
 	private float quality = 0.35f;
 	private float loadAvg = 0.4f;
 	private float solveAvg = 4f;
+	private float shareAvg = 0.05f;
+	private final int cores = Math.max(1, Runtime.getRuntime().availableProcessors());
 
 	public Budget() {
 		com.sun.management.OperatingSystemMXBean bean = null;
@@ -52,6 +66,11 @@ public final class Budget {
 	/** Учесть результат очередного прогона. */
 	public void update(float solveMs) {
 		solveAvg += (solveMs - solveAvg) * 0.3f;
+
+		// сколько процессора съели мы сами: занятая доля ядра, делённая на ядра
+		float duty = solveAvg / Math.max(1f, intervalMs());
+		shareAvg += (Math.min(1f, duty) / cores - shareAvg) * 0.3f;
+
 		if (manualQuality >= 0) {
 			quality = Math.max(0.05f, Math.min(1f, manualQuality));
 			return;
@@ -66,10 +85,14 @@ public final class Budget {
 		}
 		loadAvg += (load - loadAvg) * 0.25f;
 
-		boolean tooSlow = solveAvg > maxSolveMs;
-		if (loadAvg > panicLoad || tooSlow) {
-			quality -= 0.12f;                       // отступаем резко
-		} else if (loadAvg < targetLoad - 0.12f && solveAvg < maxSolveMs * 0.6f) {
+		float allowed = allowedSolveMs();
+		boolean tooSlow = solveAvg > allowed;
+		if (shareAvg > ownShareLimit) {
+			quality -= 0.10f;                       // вышли за свой потолок
+		} else if (loadAvg > panicLoad || tooSlow) {
+			quality -= 0.12f;                       // машине плохо — отступаем резко
+		} else if (shareAvg < ownShareLimit * 0.6f
+			&& loadAvg < targetLoad - 0.12f && solveAvg < allowed * 0.6f) {
 			quality += 0.02f;                       // поднимаемся осторожно
 		} else if (loadAvg > targetLoad) {
 			quality -= 0.03f;
@@ -80,6 +103,23 @@ public final class Budget {
 	public float quality() { return quality; }
 	public float load() { return loadAvg; }
 	public float solveMs() { return solveAvg; }
+
+	/** Доля всего процессора, которую сейчас занимает движок. */
+	public float ownShare() { return shareAvg; }
+
+	public int cores() { return cores; }
+
+	/**
+	 * Сколько может длиться один прогон, чтобы уложиться в отведённую долю.
+	 *
+	 * Прогоны идут с периодом {@link #intervalMs()}, значит занятая доля ядра
+	 * это время прогона к периоду; умножив разрешённую долю машины на число
+	 * ядер, получаем, сколько миллисекунд нам позволено.
+	 */
+	public float allowedSolveMs() {
+		float byShare = ownShareLimit * cores * intervalMs();
+		return Math.max(4f, Math.min(maxSolveMs, byShare));
+	}
 
 	/* --- во что превращается качество --- */
 
@@ -102,8 +142,8 @@ public final class Budget {
 	private static float curve(float q) { return q * q * 0.7f + q * 0.3f; }
 
 	public String describe() {
-		return String.format("качество %d%%%s · загрузка ЦП %d%% · прогон %.1f мс · лучей %d · отскоков %d",
+		return String.format("качество %d%%%s · движок ест %.1f%% ЦП из %.0f%% · система %d%% · прогон %.1f мс · лучей %d",
 			Math.round(quality * 100), manualQuality >= 0 ? "" : " (авто)",
-			Math.round(loadAvg * 100), solveAvg, rays(), bounces());
+			shareAvg * 100, ownShareLimit * 100, Math.round(loadAvg * 100), solveAvg, rays());
 	}
 }

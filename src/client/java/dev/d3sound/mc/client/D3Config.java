@@ -24,7 +24,9 @@ public final class D3Config {
 	public boolean enabled = true;
 	/** Качество расчёта, %. 0 — Авто по загрузке процессора. */
 	public int quality = 0;
-	/** До какой загрузки процессора разрешено подниматься, %. */
+	/** Потолок собственного потребления движка, % от всего процессора. */
+	public int cpuShare = 40;
+	/** До какой общей загрузки системы разрешено подниматься, %. */
 	public int cpuHeadroom = 70;
 	/** Огибание преград. */
 	public boolean diffraction = true;

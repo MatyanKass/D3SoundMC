@@ -6,7 +6,7 @@
   "d3sound.options.title": "D3Sound — физика звука",
   "d3sound.options.enabled": "Свой движок звука",
   "d3sound.options.quality": "Качество расчёта",
-  "d3sound.options.headroom": "Запас процессора",
+  "d3sound.options.headroom": "Не грузить систему выше",
   "d3sound.options.diffraction": "Огибание преград",
   "d3sound.options.reflections": "Отражения",
   "d3sound.options.reverb": "Отзвук помещения",
@@ -26,5 +26,6 @@
   "d3sound.conflicts.level.minor": "почти не мешает",
   "d3sound.conflicts.hint": "Помеченные красным лучше отключить: два движка на один звук дают либо двойное эхо, либо тишину. Остальные работают, просто их звуки идут мимо нашей физики.",
   "d3sound.conflicts.scanning": "Проверяю моды…",
-  "d3sound.options.conflicts.checking": "Конфликтующие моды (проверяю…)"
+  "d3sound.options.conflicts.checking": "Конфликтующие моды (проверяю…)",
+  "d3sound.options.share": "Потолок ЦП для движка"
 }

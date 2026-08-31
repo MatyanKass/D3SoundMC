@@ -28,8 +28,10 @@ public final class D3Overlay {
 				"D3Sound " + (engine.enabled ? "вкл" : "выкл"),
 				String.format("источников %d · лучей %d · отскоков %d",
 					engine.activeSources(), budget.rays(), budget.bounces()),
-				String.format("качество %d%% · ЦП %d%% · прогон %.1f мс",
-					Math.round(budget.quality() * 100), Math.round(budget.load() * 100), budget.solveMs()),
+				String.format("качество %d%% · движок %.1f%% ЦП (потолок %.0f%%) · прогон %.1f мс",
+					Math.round(budget.quality() * 100), budget.ownShare() * 100,
+					budget.ownShareLimit * 100, budget.solveMs()),
+				String.format("система %d%% · ядер %d", Math.round(budget.load() * 100), budget.cores()),
 				String.format("RT60 %.2f с · пробег %.1f м · скорость %.0f м/с",
 					rt60.length > 2 ? rt60[2] : 0f, engine.solver().meanFreePath, engine.mixer().air.speedOfSound),
 			};

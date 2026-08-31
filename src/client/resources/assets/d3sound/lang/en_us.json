@@ -6,7 +6,7 @@
   "d3sound.options.title": "D3Sound — sound physics",
   "d3sound.options.enabled": "Custom sound engine",
   "d3sound.options.quality": "Simulation quality",
-  "d3sound.options.headroom": "CPU headroom",
+  "d3sound.options.headroom": "System load ceiling",
   "d3sound.options.diffraction": "Diffraction",
   "d3sound.options.reflections": "Reflections",
   "d3sound.options.reverb": "Room tail",
@@ -26,5 +26,6 @@
   "d3sound.conflicts.level.minor": "mostly harmless",
   "d3sound.conflicts.hint": "Red ones are best disabled: two engines on one sound give either doubled echo or silence. The rest keep working, their sounds just bypass our physics.",
   "d3sound.conflicts.scanning": "Scanning mods…",
-  "d3sound.options.conflicts.checking": "Conflicting mods (scanning…)"
+  "d3sound.options.conflicts.checking": "Conflicting mods (scanning…)",
+  "d3sound.options.share": "Engine CPU limit"
 }

@@ -250,6 +250,7 @@ public final class D3SoundEngine {
 		D3Config config = D3Config.get();
 		enabled = config.enabled;
 		budget.manualQuality = config.quality > 0 ? config.quality / 100f : -1f;
+		budget.ownShareLimit = Math.max(0.02f, config.cpuShare / 100f);
 		budget.targetLoad = config.cpuHeadroom / 100f;
 		budget.panicLoad = Math.min(0.98f, budget.targetLoad + 0.18f);
 		budget.diffraction = config.diffraction;

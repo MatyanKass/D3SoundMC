@@ -34,6 +34,7 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 		}));
 		this.list.addSmall(
 			percent("d3sound.options.quality", 0, 100, config.quality, value -> config.quality = value, true),
+			percent("d3sound.options.share", 2, 100, config.cpuShare, value -> config.cpuShare = value, false),
 			percent("d3sound.options.headroom", 40, 95, config.cpuHeadroom, value -> config.cpuHeadroom = value, false),
 			OptionInstance.createBoolean("d3sound.options.diffraction", config.diffraction, value -> config.diffraction = value),
 			OptionInstance.createBoolean("d3sound.options.reflections", config.reflections, value -> config.reflections = value),
