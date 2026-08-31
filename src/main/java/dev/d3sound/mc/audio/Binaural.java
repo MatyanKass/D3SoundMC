@@ -32,6 +32,13 @@ public final class Binaural {
 	private final float[] bandGain = new float[Materials.BAND_COUNT];
 
 	/**
+	 * Множитель задержки распространения. Единица — как в жизни; больше или
+	 * меньше растягивает и сжимает доплеровский сдвиг, не трогая межушную
+	 * разницу, от которой зависит локализация.
+	 */
+	public volatile float delayScale = 1f;
+
+	/**
 	 * Расчёт одного пути звука.
 	 *
 	 * @param dir      направление прихода в системе слушателя
@@ -55,7 +62,7 @@ public final class Binaural {
 		float itd = (HEAD_RADIUS / air.speedOfSound) * (theta + (float) Math.sin(theta)) * (float) Math.cos(elevation);
 		if (azimuth < 0) itd = -itd;
 
-		float base = distance / air.speedOfSound + HEAD_RADIUS / air.speedOfSound;
+		float base = (distance / air.speedOfSound) * delayScale + HEAD_RADIUS / air.speedOfSound;
 		out.delayLeft = base + itd / 2;
 		out.delayRight = base - itd / 2;
 

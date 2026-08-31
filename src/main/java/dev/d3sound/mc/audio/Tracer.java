@@ -262,6 +262,8 @@ public final class Tracer {
 			}
 			if (!world.inside(x, y, z)) break;
 			byte id = world.local(x, y, z);
+			// частичный блок отражает не весь луч: доля проходит мимо него насквозь
+			if (id != VoxelSnapshot.AIR && nextFloat() > world.fill(x, y, z)) continue;
 			if (id != VoxelSnapshot.AIR) {
 				ray.material = Materials.values()[id];
 				ray.distance = (float) travelled;

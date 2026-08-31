@@ -1,5 +1,18 @@
 {
-	"category.d3sound": "D3Sound",
-	"key.d3sound.toggle": "Свой звук / ванильный",
-	"key.d3sound.info": "Показать акустику помещения"
+  "category.d3sound": "D3Sound",
+  "key.d3sound.toggle": "Свой звук / ванильный",
+  "key.d3sound.info": "Состояние движка",
+  "d3sound.options.open": "Настройки D3Sound…",
+  "d3sound.options.title": "D3Sound — физика звука",
+  "d3sound.options.enabled": "Свой движок звука",
+  "d3sound.options.quality": "Качество расчёта",
+  "d3sound.options.headroom": "Запас процессора",
+  "d3sound.options.diffraction": "Огибание преград",
+  "d3sound.options.reflections": "Отражения",
+  "d3sound.options.reverb": "Отзвук помещения",
+  "d3sound.options.doppler": "Эффект Доплера",
+  "d3sound.options.gain": "Громкость движка",
+  "d3sound.options.overlay": "Счётчик на экране",
+  "d3sound.options.value.auto": "%s: Авто",
+  "d3sound.options.value.percent": "%s: %s%%"
 }

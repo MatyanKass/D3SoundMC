@@ -95,7 +95,7 @@ public final class Paths {
 			for (int n = 0; n < 26; n++) {
 				int nx = lxi + DX[n], ny = lyi + DY[n], nz = lzi + DZ[n];
 				if (!world.inside(nx, ny, nz)) continue;
-				if (world.solid(nx, ny, nz)) continue;
+				if (world.blocking(nx, ny, nz)) continue;
 				int ni = world.index(nx, ny, nz);
 				float nd = d + COST[n];
 				if (nd >= dist[ni] || nd > maxDistance) continue;

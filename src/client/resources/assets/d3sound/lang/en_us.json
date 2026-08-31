@@ -1,5 +1,18 @@
 {
-	"category.d3sound": "D3Sound",
-	"key.d3sound.toggle": "Toggle custom sound engine",
-	"key.d3sound.info": "Show room acoustics"
+  "category.d3sound": "D3Sound",
+  "key.d3sound.toggle": "Custom / vanilla sound",
+  "key.d3sound.info": "Engine status",
+  "d3sound.options.open": "D3Sound settings…",
+  "d3sound.options.title": "D3Sound — sound physics",
+  "d3sound.options.enabled": "Custom sound engine",
+  "d3sound.options.quality": "Simulation quality",
+  "d3sound.options.headroom": "CPU headroom",
+  "d3sound.options.diffraction": "Diffraction",
+  "d3sound.options.reflections": "Reflections",
+  "d3sound.options.reverb": "Room tail",
+  "d3sound.options.doppler": "Doppler effect",
+  "d3sound.options.gain": "Engine volume",
+  "d3sound.options.overlay": "On-screen counter",
+  "d3sound.options.value.auto": "%s: Auto",
+  "d3sound.options.value.percent": "%s: %s%%"
 }

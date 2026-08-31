@@ -23,6 +23,13 @@ public final class Budget {
 	/** Верхняя граница времени одного прогона, мс. */
 	public volatile float maxSolveMs = 12f;
 
+	/** Ручное качество 0…1; отрицательное значение — режим «Авто». */
+	public volatile float manualQuality = -1f;
+	/** Считать ли обходные пути (дифракцию). */
+	public volatile boolean diffraction = true;
+	/** Считать ли отражения. */
+	public volatile boolean reflections = true;
+
 	/** Текущее качество 0…1. */
 	private float quality = 0.35f;
 	private float loadAvg = 0.4f;
@@ -41,6 +48,10 @@ public final class Budget {
 	/** Учесть результат очередного прогона. */
 	public void update(float solveMs) {
 		solveAvg += (solveMs - solveAvg) * 0.3f;
+		if (manualQuality >= 0) {
+			quality = Math.max(0.05f, Math.min(1f, manualQuality));
+			return;
+		}
 
 		float load = 0.5f;
 		if (os != null) {
@@ -87,7 +98,8 @@ public final class Budget {
 	private static float curve(float q) { return q * q * 0.7f + q * 0.3f; }
 
 	public String describe() {
-		return String.format("качество %d%% · загрузка ЦП %d%% · прогон %.1f мс · лучей %d · отскоков %d",
-			Math.round(quality * 100), Math.round(loadAvg * 100), solveAvg, rays(), bounces());
+		return String.format("качество %d%%%s · загрузка ЦП %d%% · прогон %.1f мс · лучей %d · отскоков %d",
+			Math.round(quality * 100), manualQuality >= 0 ? "" : " (авто)",
+			Math.round(loadAvg * 100), solveAvg, rays(), bounces());
 	}
 }

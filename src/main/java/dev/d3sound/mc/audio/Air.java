@@ -30,6 +30,39 @@ public final class Air {
 		}
 	}
 
+	/** Прямое задание среды: скорость и поглощение по полосам. */
+	private Air(float speedOfSound, float[] dbPerMeterByBand) {
+		this.speedOfSound = speedOfSound;
+		System.arraycopy(dbPerMeterByBand, 0, dbPerMeter, 0, Materials.BAND_COUNT);
+	}
+
+	/**
+	 * Вода. Звук идёт вчетверо быстрее воздуха и почти не гаснет: под водой
+	 * далёкое слышно лучше, чем на суше, — глухо звучит не сама вода, а
+	 * переход через её поверхность.
+	 */
+	public static final Air WATER = new Air(1484f,
+		new float[]{1e-5f, 3e-5f, 1e-4f, 4e-4f, 1.4e-3f, 5e-3f, 1.8e-2f});
+
+	/** Лава: вязкая и горячая, верх съедается почти сразу. */
+	public static final Air LAVA = new Air(1100f,
+		new float[]{0.02f, 0.05f, 0.12f, 0.3f, 0.8f, 2f, 5f});
+
+	/**
+	 * Потери на границе воздух — вода, дБ по полосам.
+	 *
+	 * Сопротивления сред различаются в тысячи раз, поэтому почти вся энергия
+	 * отражается обратно; сквозь поверхность проходит в основном низ. Отсюда и
+	 * знакомое «из-под воды слышно только гул».
+	 */
+	public static final float[] SURFACE_LOSS_DB = {10f, 13f, 17f, 21f, 26f, 32f, 39f};
+
+	/** Нижний мир: сухо и жарко, звук идёт заметно быстрее и дальше несёт верх. */
+	public static Air nether() { return new Air(75f, 5f, 101.325f); }
+
+	/** Энд: холодная разрежённая пустота — звук медленнее и почти не гаснет. */
+	public static Air end() { return new Air(-10f, 0f, 60f); }
+
 	/** Погода Minecraft: в дождь воздух влажный, в снег — холодный. */
 	public static Air forWeather(boolean raining, boolean snowing, float biomeTemperature) {
 		float t = 8 + biomeTemperature * 22f;             // биомная «температура» 0…1 → −? …30 °C

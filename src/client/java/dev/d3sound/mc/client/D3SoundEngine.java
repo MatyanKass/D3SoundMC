@@ -19,7 +19,11 @@ import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.dimension.BuiltinDimensionTypes;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
@@ -55,7 +59,7 @@ public final class D3SoundEngine {
 
 	private D3SoundEngine() {}
 
-	public volatile boolean enabled = true;
+	public volatile boolean enabled = D3Config.get().enabled;
 	public volatile boolean verbose = false;
 
 	private final Mixer mixer = new Mixer();
@@ -74,6 +78,8 @@ public final class D3SoundEngine {
 	private ChannelAccess.ChannelHandle output;
 	private ScheduledExecutorService pump;
 	private int tickCounter;
+	/** Слушатель под водой — тогда меняется и среда, и переход через поверхность. */
+	private boolean listenerUnderwater;
 
 	// снимок мира набирается слоями, чтобы не собирать 200 тысяч блоков за раз
 	private VoxelSnapshot filling;
@@ -209,15 +215,46 @@ public final class D3SoundEngine {
 				client.player.getYRot(), client.player.getXRot());
 		}
 
-		if (++tickCounter % 40 == 0) {
-			float temp = level.getBiome(BlockPos.containing(mixer.listenerX, mixer.listenerY, mixer.listenerZ))
-				.value().getBaseTemperature();
-			mixer.air = Air.forWeather(level.isRaining(), level.isThundering() && temp < 0.15f, temp);
-		}
+		applyConfig();
+		listenerUnderwater = client.player != null && client.player.isEyeInFluid(FluidTags.WATER);
+
+		if (++tickCounter % 20 == 0) mixer.air = airOf(level);
 
 		fillSnapshot(level);
-		applySolutions();
+		applySolutions(level);
 		mixer.applyTail(solver.rt60, solver.meanFreePath);
+		D3Config config = D3Config.get();
+		if (config.reverb > 0) mixer.setWet(config.reverb / 100f);
+	}
+
+	/** Настройки игрока в параметры расчёта. */
+	private void applyConfig() {
+		D3Config config = D3Config.get();
+		enabled = config.enabled;
+		budget.manualQuality = config.quality > 0 ? config.quality / 100f : -1f;
+		budget.targetLoad = config.cpuHeadroom / 100f;
+		budget.panicLoad = Math.min(0.98f, budget.targetLoad + 0.18f);
+		budget.diffraction = config.diffraction;
+		budget.reflections = config.reflections;
+		binaural.delayScale = Math.max(0f, config.doppler / 100f);
+		mixer.setMasterGain(config.gain / 100f);
+	}
+
+	/**
+	 * Среда вокруг слушателя.
+	 *
+	 * Под водой звук идёт вчетверо быстрее и почти не гаснет; в Нижнем мире
+	 * воздух горячий и сухой, отчего скорость выше почти на треть; в Энде —
+	 * холодная разрежённая пустота, звук медленный и вязкий.
+	 */
+	private Air airOf(Level level) {
+		if (listenerUnderwater) return Air.WATER;
+		var type = level.dimensionTypeRegistration().unwrapKey().orElse(null);
+		if (type == BuiltinDimensionTypes.NETHER) return Air.nether();
+		if (type == BuiltinDimensionTypes.END) return Air.end();
+		float temp = level.getBiome(BlockPos.containing(mixer.listenerX, mixer.listenerY, mixer.listenerZ))
+			.value().getBaseTemperature();
+		return Air.forWeather(level.isRaining(), level.isThundering() && temp < 0.15f, temp);
 	}
 
 	/* --- снимок мира слоями --- */
@@ -242,11 +279,15 @@ public final class D3SoundEngine {
 				for (int lx = 0; lx < size; lx++) {
 					BlockState state = level.getBlockState(pos.set(filling.originX + lx, wy, wz));
 					byte id = VoxelSnapshot.AIR;
+					byte fill = 100;
 					if (!state.isAir()) {
 						if (state.liquid()) id = (byte) Materials.WATER.ordinal();
-						else if (state.blocksMotion()) id = (byte) materialOf(state.getSoundType()).ordinal();
+						else if (state.blocksMotion()) {
+							id = (byte) materialOf(state.getSoundType()).ordinal();
+							fill = occupancyOf(state, level, pos);
+						}
 					}
-					filling.set(lx, fillLayer, lz, id);
+					filling.set(lx, fillLayer, lz, id, fill);
 				}
 			}
 		}
@@ -256,6 +297,26 @@ public final class D3SoundEngine {
 			filling = new VoxelSnapshot(radius);
 			fillLayer = 0;
 			submitJob();
+		}
+	}
+
+	/**
+	 * Какую долю клетки занимает блок.
+	 *
+	 * Плита — половину, ступенька — три четверти, забор и стекло в раме — лишь
+	 * малую часть. Звук отражается и перекрывается ровно в этой мере, поэтому
+	 * за забором слышно почти как в открытом поле, а за плитой уже нет.
+	 */
+	private static byte occupancyOf(BlockState state, Level level, BlockPos pos) {
+		try {
+			if (state.isCollisionShapeFullBlock(level, pos)) return 100;
+			VoxelShape shape = state.getCollisionShape(level, pos);
+			if (shape.isEmpty()) return 20;
+			AABB box = shape.bounds();
+			double volume = (box.maxX - box.minX) * (box.maxY - box.minY) * (box.maxZ - box.minZ);
+			return (byte) Math.max(5, Math.min(100, Math.round(volume * 100)));
+		} catch (Throwable ignored) {
+			return 100;
 		}
 	}
 
@@ -285,7 +346,7 @@ public final class D3SoundEngine {
 
 	/* --- перенос решений в источники --- */
 
-	private void applySolutions() {
+	private void applySolutions(Level level) {
 		for (Map.Entry<SoundInstance, Source> entry : playing.entrySet()) {
 			SoundInstance instance = entry.getKey();
 			Source source = entry.getValue();
@@ -294,6 +355,11 @@ public final class D3SoundEngine {
 			source.x = instance.getX();
 			source.y = instance.getY();
 			source.z = instance.getZ();
+
+			// звук, пересекающий поверхность воды, теряет почти всё, кроме низа
+			boolean sourceUnderwater = level.getFluidState(
+				BlockPos.containing(source.x, source.y, source.z)).is(FluidTags.WATER);
+			boolean crossesSurface = sourceUnderwater != listenerUnderwater;
 
 			Solution solution = solver.solutionFor(source.id);
 			if (solution == null || solution.tapCount == 0) { applyFallback(source); continue; }
@@ -314,6 +380,12 @@ public final class D3SoundEngine {
 					for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
 				} else {
 					System.arraycopy(solution.bands[t], 0, bandBuffer, 0, Materials.BAND_COUNT);
+				}
+
+				if (crossesSurface) {
+					for (int b = 0; b < Materials.BAND_COUNT; b++) {
+						bandBuffer[b] *= (float) Math.pow(10.0, -Air.SURFACE_LOSS_DB[b] / 20.0);
+					}
 				}
 
 				Binaural.toListenerFrame(dx, dy, dz, mixer.listenerYaw, mixer.listenerPitch, dirBuffer);

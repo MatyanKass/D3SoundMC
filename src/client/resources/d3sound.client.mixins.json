@@ -6,8 +6,10 @@
 		"defaultRequire": 1
 	},
 	"client": [
+		"OptionsSubScreenAccessor",
 		"SoundBufferAccessor",
 		"SoundEngineAccessor",
-		"SoundEngineMixin"
+		"SoundEngineMixin",
+		"SoundOptionsScreenMixin"
 	]
 }

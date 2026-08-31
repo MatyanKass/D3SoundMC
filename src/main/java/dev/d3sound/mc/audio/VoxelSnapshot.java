@@ -16,6 +16,8 @@ public final class VoxelSnapshot {
 	public final int radius;
 	public final int size;
 	private final byte[] cells;
+	/** Доля объёма клетки, занятая блоком: 0…100. Плита — 50, забор — около 10. */
+	private final byte[] fills;
 
 	/** Мировые координаты угла куба. */
 	public int originX, originY, originZ;
@@ -26,6 +28,7 @@ public final class VoxelSnapshot {
 		this.radius = radius;
 		this.size = radius * 2;
 		this.cells = new byte[size * size * size];
+		this.fills = new byte[size * size * size];
 	}
 
 	public void setOrigin(double lx, double ly, double lz) {
@@ -55,8 +58,29 @@ public final class VoxelSnapshot {
 	}
 
 	public void set(int lx, int ly, int lz, byte material) {
-		cells[index(lx, ly, lz)] = material;
+		set(lx, ly, lz, material, (byte) 100);
 	}
+
+	/** Материал и доля занятого объёма — от неё зависит, пройдёт ли звук мимо. */
+	public void set(int lx, int ly, int lz, byte material, byte fillPercent) {
+		int i = index(lx, ly, lz);
+		cells[i] = material;
+		fills[i] = material == AIR ? 0 : fillPercent;
+	}
+
+	/** Насколько плотно клетка занята, 0…1. */
+	public float fill(int lx, int ly, int lz) {
+		if (!inside(lx, ly, lz)) return 0f;
+		return fills[index(lx, ly, lz)] / 100f;
+	}
+
+	/**
+	 * Считать ли клетку преградой для прямого звука.
+	 *
+	 * Плита и ступень перекрывают путь, а забор или решётка — нет: звук
+	 * проходит между прутьями, теряя разве что немного верха.
+	 */
+	public boolean blocking(int lx, int ly, int lz) { return fill(lx, ly, lz) >= 0.5f; }
 
 	public boolean solid(int lx, int ly, int lz) { return local(lx, ly, lz) != AIR; }
 

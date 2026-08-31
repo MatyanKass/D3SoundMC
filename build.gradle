@@ -13,6 +13,11 @@ loom {
 	}
 }
 
+base {
+	// имя сборки говорит само за себя: загрузчик, версия игры, мод и его версия
+	archivesName = "fabric-${project.minecraft_version}_d3SoundMC"
+}
+
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"

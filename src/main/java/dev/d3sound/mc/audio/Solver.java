@@ -115,14 +115,21 @@ public final class Solver {
 			szLocal[i] = world.toLocalZ(job.sourceZ(i));
 		}
 
+		boolean diffraction = budget.diffraction;
+		boolean reflections = budget.reflections;
+
 		// 1. волновой фронт по свободным клеткам — обходные пути
-		paths.build(world, world.listenerX, world.listenerY, world.listenerZ, world.radius * 1.8f);
+		if (diffraction) {
+			paths.build(world, world.listenerX, world.listenerY, world.listenerZ, world.radius * 1.8f);
+		}
 
 		// 2. отражения
-		tracer.trace(world, sxLocal, syLocal, szLocal, count,
-			budget.rays(), budget.bounces(), c, RECEIVER_RADIUS, System.nanoTime());
-		rt60 = tracer.rt60.clone();
-		meanFreePath = tracer.meanFreePath;
+		if (reflections) {
+			tracer.trace(world, sxLocal, syLocal, szLocal, count,
+				budget.rays(), budget.bounces(), c, RECEIVER_RADIUS, System.nanoTime());
+			rt60 = tracer.rt60.clone();
+			meanFreePath = tracer.meanFreePath;
+		}
 
 		int maxTaps = budget.taps();
 		float scale = 1f / RECEIVER_RADIUS;
@@ -185,7 +192,7 @@ public final class Solver {
 			}
 			if (travelled >= dist - 0.05) break;
 			if (!world.inside(x, y, z)) return false;
-			if (world.solid(x, y, z)) return true;
+			if (world.blocking(x, y, z)) return true;
 		}
 		return false;
 	}
@@ -207,7 +214,7 @@ public final class Solver {
 			for (int oy = -1; oy <= 1; oy++) {
 				for (int oz = -1; oz <= 1; oz++) {
 					int x = lx + ox, y = ly + oy, z = lz + oz;
-					if (!world.inside(x, y, z) || world.solid(x, y, z)) continue;
+					if (!world.inside(x, y, z) || world.blocking(x, y, z)) continue;
 					int i = world.index(x, y, z);
 					float d = paths.distanceAt(i);
 					if (d < best) { best = d; index = i; }
