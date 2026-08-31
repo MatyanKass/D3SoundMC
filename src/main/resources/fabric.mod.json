@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "d3sound",
+	"version": "${version}",
+	"name": "D3Sound",
+	"description": "Переписанный звук: честная физика распространения, бинауральная локализация, отражения и реверберация из геометрии мира.",
+	"authors": ["MatyanKass"],
+	"contact": {
+		"sources": "https://github.com/MatyanKass/D3SoundMC"
+	},
+	"license": "All rights reserved",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.d3sound.mc.client.D3SoundClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "d3sound.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.2",
+		"minecraft": "~26.1",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
