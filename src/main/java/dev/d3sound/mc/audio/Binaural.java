@@ -71,8 +71,9 @@ public final class Binaural {
 		for (int b = 0; b < Materials.BAND_COUNT; b++) {
 			float v = bandGain[b];
 			if (rear > 0) v *= (float) Math.pow(10.0, -(REAR_DB[b] * rear) / 20.0);
-			float vl = v * (float) Math.pow(10.0, -(SHADOW_DB[b] * (1 + x) / 2) / 20.0);
-			float vr = v * (float) Math.pow(10.0, -(SHADOW_DB[b] * (1 - x) / 2) / 20.0);
+			// экранируется только дальнее ухо: спереди оба слышат одинаково и в полный голос
+			float vl = v * (float) Math.pow(10.0, -(SHADOW_DB[b] * Math.max(0, x)) / 20.0);
+			float vr = v * (float) Math.pow(10.0, -(SHADOW_DB[b] * Math.max(0, -x)) / 20.0);
 			int g = b <= 1 ? 0 : (b <= 4 ? 1 : 2);
 			out.gainLeft[g] += vl;
 			out.gainRight[g] += vr;

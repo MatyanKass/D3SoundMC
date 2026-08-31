@@ -283,8 +283,9 @@ public final class D3SoundEngine {
 					if (!state.isAir()) {
 						if (state.liquid()) id = (byte) Materials.WATER.ordinal();
 						else if (state.blocksMotion()) {
-							id = (byte) materialOf(state.getSoundType()).ordinal();
-							fill = occupancyOf(state, level, pos);
+							Materials material = materialOf(state.getSoundType());
+							id = (byte) material.ordinal();
+							fill = (byte) Math.max(1, Math.round(occupancyOf(state, level, pos) * material.density()));
 						}
 					}
 					filling.set(lx, fillLayer, lz, id, fill);
@@ -376,7 +377,7 @@ public final class D3SoundEngine {
 					double wz = source.z - mixer.listenerZ;
 					distance = (float) Math.sqrt(wx * wx + wy * wy + wz * wz);
 					dx = (float) wx; dy = (float) wy; dz = (float) wz;
-					float spread = 1f / Math.max(0.5f, distance);
+					float spread = Solver.spread(distance);
 					for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
 				} else {
 					System.arraycopy(solution.bands[t], 0, bandBuffer, 0, Materials.BAND_COUNT);
@@ -410,7 +411,7 @@ public final class D3SoundEngine {
 		double dy = source.y - mixer.listenerY;
 		double dz = source.z - mixer.listenerZ;
 		float distance = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-		float spread = 1f / Math.max(0.5f, distance);
+		float spread = Solver.spread(distance);
 		for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
 
 		Binaural.toListenerFrame(dx, dy, dz, mixer.listenerYaw, mixer.listenerPitch, dirBuffer);

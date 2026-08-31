@@ -48,6 +48,16 @@ public final class Solver {
 
 	private static final float RECEIVER_RADIUS = 0.7f;
 
+	/**
+	 * Опорное расстояние, м.
+	 *
+	 * Источник звука не математическая точка: ближе этого расстояния громкость
+	 * уже не растёт. Отсюда же и общий уровень — на опорном расстоянии звук
+	 * звучит в полную силу, дальше падает как 1/r, по закону обратных квадратов
+	 * для энергии.
+	 */
+	public static final float REFERENCE_DISTANCE = 1.6f;
+
 	public Solver(Budget budget, int maxSnapshotSize) {
 		this.budget = budget;
 		this.paths = new Paths(maxSnapshotSize);
@@ -147,7 +157,7 @@ public final class Solver {
 			boolean blocked = blockedDirect(world, s);
 			solution.directBlocked = blocked;
 			if (!blocked) {
-				float spread = 1f / Math.max(0.5f, distance);
+				float spread = spread(distance);
 				for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
 				solution.addTap(distance / c, bandBuffer, (float) dx, (float) dy, (float) dz);
 			} else {
@@ -160,6 +170,11 @@ public final class Solver {
 			solution.tailLevel = (float) Math.sqrt(tracer.lateEnergy(s)) * scale;
 			solutions.put(job.sourceId(s), solution);
 		}
+	}
+
+	/** Геометрическое расхождение по амплитуде. */
+	public static float spread(float distance) {
+		return REFERENCE_DISTANCE / Math.max(REFERENCE_DISTANCE, distance);
 	}
 
 	/** Прямая видимость источника из точки слушателя. */
@@ -230,7 +245,7 @@ public final class Solver {
 		float pathLength = Math.max(direct, best);
 		float delta = pathLength - direct;
 
-		float spread = 1f / Math.max(0.5f, pathLength);
+		float spread = spread(pathLength);
 		float sum = 0;
 		for (int b = 0; b < Materials.BAND_COUNT; b++) {
 			float att = Paths.maekawaDb(delta, Materials.BANDS[b], c);

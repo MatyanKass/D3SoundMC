@@ -35,7 +35,7 @@ public final class D3Config {
 	/** Сила эффекта Доплера, %. 100 — как в жизни. */
 	public int doppler = 100;
 	/** Общая громкость движка, %. Поверх ползунков самой игры. */
-	public int gain = 100;
+	public int gain = 150;
 	/** Показывать счётчик нагрузки на экране. */
 	public boolean overlay = false;
 

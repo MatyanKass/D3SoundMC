@@ -14,5 +14,6 @@
   "d3sound.options.gain": "Громкость движка",
   "d3sound.options.overlay": "Счётчик на экране",
   "d3sound.options.value.auto": "%s: Авто",
-  "d3sound.options.value.percent": "%s: %s%%"
+  "d3sound.options.value.percent": "%s: %s%%",
+  "d3sound.options.locked": "Считает D3Sound — встроенная обработка звука отключена"
 }

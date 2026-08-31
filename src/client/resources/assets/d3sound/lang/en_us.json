@@ -14,5 +14,6 @@
   "d3sound.options.gain": "Engine volume",
   "d3sound.options.overlay": "On-screen counter",
   "d3sound.options.value.auto": "%s: Auto",
-  "d3sound.options.value.percent": "%s: %s%%"
+  "d3sound.options.value.percent": "%s: %s%%",
+  "d3sound.options.locked": "Handled by D3Sound — the built-in processing is off"
 }
