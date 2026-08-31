@@ -38,7 +38,7 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			OptionInstance.createBoolean("d3sound.options.reflections", config.reflections, value -> config.reflections = value),
 			percent("d3sound.options.reverb", 0, 200, config.reverb, value -> config.reverb = value, true),
 			percent("d3sound.options.doppler", 0, 200, config.doppler, value -> config.doppler = value, false),
-			percent("d3sound.options.gain", 0, 200, config.gain, value -> config.gain = value, false),
+			percent("d3sound.options.gain", 0, 500, config.gain, value -> config.gain = value, false),
 			OptionInstance.createBoolean("d3sound.options.overlay", config.overlay, value -> config.overlay = value)
 		);
 	}
