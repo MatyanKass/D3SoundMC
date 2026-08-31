@@ -77,6 +77,8 @@ public final class D3SoundEngine {
 	private SoundEngine soundEngine;
 	private ChannelAccess.ChannelHandle output;
 	private ScheduledExecutorService pump;
+	/** Канал уже заказан: заказ выполняется в другом потоке, дублировать нельзя. */
+	private volatile boolean openingOutput;
 	private int tickCounter;
 	/** Слушатель под водой — тогда меняется и среда, и переход через поверхность. */
 	private boolean listenerUnderwater;
@@ -138,11 +140,26 @@ public final class D3SoundEngine {
 		source.z = instance.getZ();
 		source.volume = volume;
 		source.pitch = pitch;
+		source.impact = isImpact(source.name);
 		// пока решатель не ответил — простой прямой путь, чтобы звук не пропал
 		applyFallback(source);
 		playing.put(instance, source);
 		mixer.add(source);
 		if (verbose) LOG.info("D3Sound: {} на ({}, {}, {})", source.name, (int) source.x, (int) source.y, (int) source.z);
+	}
+
+	/**
+	 * Похоже ли на удар по блоку.
+	 *
+	 * Шаг, кирка, поршень, падение и взрыв бьют по конструкции напрямую и
+	 * уходят в неё почти целиком; голос или пластинка отдают в стену лишь ту
+	 * малость, что успевает её раскачать через воздух.
+	 */
+	private static boolean isImpact(String id) {
+		return id.contains("step") || id.contains("break") || id.contains("place")
+			|| id.contains("hit") || id.contains("fall") || id.contains("land")
+			|| id.contains("explo") || id.contains("anvil") || id.contains("piston")
+			|| id.contains("dig") || id.contains("door") || id.contains("chest");
 	}
 
 	public void stop(SoundInstance instance) {
@@ -236,6 +253,8 @@ public final class D3SoundEngine {
 		budget.panicLoad = Math.min(0.98f, budget.targetLoad + 0.18f);
 		budget.diffraction = config.diffraction;
 		budget.reflections = config.reflections;
+		budget.structure = config.structure;
+		budget.structureGain = config.structureLevel / 100f;
 		binaural.delayScale = Math.max(0f, config.doppler / 100f);
 		mixer.setMasterGain(config.gain / 100f);
 	}
@@ -341,6 +360,7 @@ public final class D3SoundEngine {
 			public double sourceX(int i) { return sources.get(i).x; }
 			public double sourceY(int i) { return sources.get(i).y; }
 			public double sourceZ(int i) { return sources.get(i).z; }
+			public boolean sourceImpact(int i) { return sources.get(i).impact; }
 			public float speedOfSound() { return speed; }
 		});
 	}
@@ -456,13 +476,16 @@ public final class D3SoundEngine {
 	private void ensureOutput() {
 		if (soundEngine == null) return;
 		if (output != null && !output.isStopped()) return;
+		if (openingOutput) return;
 		SoundEngineAccessor accessor = (SoundEngineAccessor) soundEngine;
 		if (!accessor.d3sound$loaded()) return;
+		openingOutput = true;
 
 		D3Stream stream = new D3Stream(mixer);
 		accessor.d3sound$channelAccess()
 			.createHandle(com.mojang.blaze3d.audio.Library.Pool.STREAMING)
 			.thenAccept(handle -> {
+				openingOutput = false;
 				if (handle == null) return;
 				output = handle;
 				handle.execute(channel -> {
@@ -476,6 +499,10 @@ public final class D3SoundEngine {
 				});
 				startPump();
 				LOG.info("D3Sound: канал вывода поднят");
+			}).exceptionally(error -> {
+				openingOutput = false;
+				LOG.warn("D3Sound: канал вывода не поднялся: {}", error.toString());
+				return null;
 			});
 	}
 

@@ -4,6 +4,7 @@ import dev.d3sound.mc.client.D3Config;
 import dev.d3sound.mc.client.D3SoundEngine;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.Options;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.network.chat.Component;
@@ -36,11 +37,17 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			percent("d3sound.options.headroom", 40, 95, config.cpuHeadroom, value -> config.cpuHeadroom = value, false),
 			OptionInstance.createBoolean("d3sound.options.diffraction", config.diffraction, value -> config.diffraction = value),
 			OptionInstance.createBoolean("d3sound.options.reflections", config.reflections, value -> config.reflections = value),
+			OptionInstance.createBoolean("d3sound.options.structure", config.structure, value -> config.structure = value),
+			percent("d3sound.options.structure_level", 0, 300, config.structureLevel, value -> config.structureLevel = value, false),
 			percent("d3sound.options.reverb", 0, 200, config.reverb, value -> config.reverb = value, true),
 			percent("d3sound.options.doppler", 0, 200, config.doppler, value -> config.doppler = value, false),
 			percent("d3sound.options.gain", 0, 500, config.gain, value -> config.gain = value, false),
 			OptionInstance.createBoolean("d3sound.options.overlay", config.overlay, value -> config.overlay = value)
 		);
+		int conflicts = dev.d3sound.mc.client.Conflicts.detect().size();
+		this.list.addSmall(Button.builder(
+			Component.translatable("d3sound.options.conflicts", conflicts),
+			b -> D3ConflictsScreen.open(this)).build(), null);
 	}
 
 	/** Ползунок в процентах; при autoAtZero крайнее левое значение — «Авто». */

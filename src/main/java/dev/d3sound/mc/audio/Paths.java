@@ -30,7 +30,10 @@ public final class Paths {
 		}
 	}
 
+	/** Размер массивов: рассчитан на самый большой снимок. */
 	private final int size;
+	/** Размер текущего снимка — по нему и раскладывается индекс клетки. */
+	private int grid;
 	private final float[] dist;
 	private final byte[] firstStep;
 	private final int[] heap;
@@ -67,6 +70,7 @@ public final class Paths {
 	 * @param maxDistance ограничение по длине пути, м (дальше считать незачем)
 	 */
 	public void build(VoxelSnapshot world, double lx, double ly, double lz, float maxDistance) {
+		grid = world.size;
 		Arrays.fill(dist, Float.MAX_VALUE);
 		Arrays.fill(firstStep, (byte) 0xFF);
 		heapSize = 0;
@@ -86,10 +90,10 @@ public final class Paths {
 			if (d > dist[index]) continue;
 			if (d > maxDistance) break;
 
-			int lxi = index % size;
-			int rest = index / size;
-			int lzi = rest % size;
-			int lyi = rest / size;
+			int lxi = index % grid;
+			int rest = index / grid;
+			int lzi = rest % grid;
+			int lyi = rest / grid;
 			byte step = firstStep[index];
 
 			for (int n = 0; n < 26; n++) {

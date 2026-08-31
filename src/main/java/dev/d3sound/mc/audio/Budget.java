@@ -29,6 +29,10 @@ public final class Budget {
 	public volatile boolean diffraction = true;
 	/** Считать ли отражения. */
 	public volatile boolean reflections = true;
+	/** Считать ли звук, идущий по самим блокам. */
+	public volatile boolean structure = true;
+	/** Множитель уровня структурного звука. */
+	public volatile float structureGain = 1f;
 
 	/** Текущее качество 0…1. */
 	private float quality = 0.35f;

@@ -30,6 +30,10 @@ public final class D3Config {
 	public boolean diffraction = true;
 	/** Отражения от геометрии мира. */
 	public boolean reflections = true;
+	/** Звук, идущий по самим блокам: слышно соседей за стеной. */
+	public boolean structure = true;
+	/** Уровень структурного звука, %. */
+	public int structureLevel = 100;
 	/** Уровень хвоста реверберации, %. 0 — Авто по времени затухания помещения. */
 	public int reverb = 0;
 	/** Сила эффекта Доплера, %. 100 — как в жизни. */

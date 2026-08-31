@@ -27,11 +27,14 @@ public final class Solver {
 		double sourceX(int i);
 		double sourceY(int i);
 		double sourceZ(int i);
+		/** Звук от удара по блоку: такой отдаёт в конструкцию куда больше. */
+		boolean sourceImpact(int i);
 		float speedOfSound();
 	}
 
 	private final Budget budget;
 	private final Paths paths;
+	private final Structure structure;
 	private final Tracer tracer = new Tracer();
 	private final Map<Long, Solution> solutions = new ConcurrentHashMap<>();
 	private final AtomicReference<Job> pending = new AtomicReference<>();
@@ -58,9 +61,13 @@ public final class Solver {
 	 */
 	public static final float REFERENCE_DISTANCE = 1.6f;
 
+	/** Дальше этих потерь структурный звук уже неслышен. */
+	private static final float MAX_STRUCTURE_LOSS_DB = 55f;
+
 	public Solver(Budget budget, int maxSnapshotSize) {
 		this.budget = budget;
 		this.paths = new Paths(maxSnapshotSize);
+		this.structure = new Structure(maxSnapshotSize);
 		java.util.Arrays.fill(rt60, 1f);
 	}
 
@@ -133,7 +140,12 @@ public final class Solver {
 			paths.build(world, world.listenerX, world.listenerY, world.listenerZ, world.radius * 1.8f);
 		}
 
-		// 2. отражения
+		// 2. звук по конструкции — им слышно соседей за стеной
+		if (budget.structure) {
+			structure.build(world, world.listenerX, world.listenerY, world.listenerZ, MAX_STRUCTURE_LOSS_DB);
+		}
+
+		// 3. отражения
 		if (reflections) {
 			tracer.trace(world, sxLocal, syLocal, szLocal, count,
 				budget.rays(), budget.bounces(), c, RECEIVER_RADIUS, System.nanoTime());
@@ -261,6 +273,67 @@ public final class Solver {
 			// звук приходит с той стороны, куда уходит обходной путь
 			solution.addTap(pathLength / c, bandBuffer, dirBuffer[0], dirBuffer[1], dirBuffer[2]);
 		}
+	}
+
+	/**
+	 * Звук, ушедший в конструкцию и вышедший из стены рядом со слушателем.
+	 *
+	 * Источник раскачивает ближайшую к нему поверхность (удар — сильно, голос
+	 * по воздуху — слабо и только низом), волна идёт по блокам, теряя тем
+	 * больше, чем выше частота и мягче материал, и излучается обратно в воздух
+	 * той стеной, у которой стоит слушатель. Оттуда её и слышно.
+	 */
+	private void addStructureBorne(VoxelSnapshot world, Job job, int s, float c, Solution solution) {
+		if (!structure.ready()) return;
+		int sx = (int) Math.floor(sxLocal[s]);
+		int sy = (int) Math.floor(syLocal[s]);
+		int sz = (int) Math.floor(szLocal[s]);
+
+		int best = -1;
+		float bestCost = Float.MAX_VALUE;
+		float bestGap = 1f;
+		for (int ox = -2; ox <= 2; ox++) {
+			for (int oy = -2; oy <= 2; oy++) {
+				for (int oz = -2; oz <= 2; oz++) {
+					int x = sx + ox, y = sy + oy, z = sz + oz;
+					if (!world.inside(x, y, z) || !world.solid(x, y, z)) continue;
+					int i = world.index(x, y, z);
+					if (!structure.reachable(i)) continue;
+					float gap = (float) Math.sqrt(ox * ox + oy * oy + oz * oz);
+					// чем дальше источник от поверхности, тем хуже он её раскачивает
+					float cost = structure.lossAt(i) + 20f * (float) Math.log10(Math.max(1f, gap));
+					if (cost < bestCost) { bestCost = cost; best = i; bestGap = gap; }
+				}
+			}
+		}
+		if (best < 0 || bestCost > MAX_STRUCTURE_LOSS_DB) return;
+
+		float[] coupling = job.sourceImpact(s) ? Structure.IMPACT_COUPLING_DB : Structure.AIRBORNE_COUPLING_DB;
+		float pathLoss = structure.lossAt(best);
+		float gapLoss = 20f * (float) Math.log10(Math.max(1f, bestGap));
+		float gain = budget.structureGain;
+
+		float sum = 0;
+		for (int b = 0; b < Materials.BAND_COUNT; b++) {
+			float db = pathLoss * Structure.BAND_FACTOR[b] + coupling[b] + Structure.RADIATION_DB[b] + gapLoss;
+			bandBuffer[b] = gain * (float) Math.pow(10.0, -db / 20.0);
+			sum += bandBuffer[b];
+		}
+		if (sum < 1e-4f) return;
+
+		// по блокам звук идёт почти мгновенно — приходит раньше воздушного
+		float delay = structure.lengthAt(best) / Structure.SPEED + bestGap / c;
+
+		// слышится из той стены, что рядом со слушателем
+		int emerge = structure.seedAt(best);
+		int ex = emerge % world.size;
+		int rest = emerge / world.size;
+		int ez = rest % world.size;
+		int ey = rest / world.size;
+		float dx = (float) (world.originX + ex + 0.5 - world.listenerX);
+		float dy = (float) (world.originY + ey + 0.5 - world.listenerY);
+		float dz = (float) (world.originZ + ez + 0.5 - world.listenerZ);
+		solution.addTap(delay, bandBuffer, dx, dy, dz);
 	}
 
 	/** Самые сильные ранние приходы становятся отдельными отводами. */

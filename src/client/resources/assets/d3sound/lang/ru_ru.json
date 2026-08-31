@@ -15,5 +15,14 @@
   "d3sound.options.overlay": "Счётчик на экране",
   "d3sound.options.value.auto": "%s: Авто",
   "d3sound.options.value.percent": "%s: %s%%",
-  "d3sound.options.locked": "Считает D3Sound — встроенная обработка звука отключена"
+  "d3sound.options.locked": "Считает D3Sound — встроенная обработка звука отключена",
+  "d3sound.options.structure": "Звук через блоки",
+  "d3sound.options.structure_level": "Сила звука через блоки",
+  "d3sound.options.conflicts": "Конфликтующие моды (%s)",
+  "d3sound.conflicts.title": "Моды, спорящие за звук",
+  "d3sound.conflicts.none": "Конфликтов не найдено — весь звук считаем мы",
+  "d3sound.conflicts.level.blocking": "мешает работе",
+  "d3sound.conflicts.level.partial": "частично мимо нас",
+  "d3sound.conflicts.level.minor": "почти не мешает",
+  "d3sound.conflicts.hint": "Помеченные красным лучше отключить: два движка на один звук дают либо двойное эхо, либо тишину. Остальные работают, просто их звуки идут мимо нашей физики."
 }

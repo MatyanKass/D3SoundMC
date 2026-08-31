@@ -15,5 +15,14 @@
   "d3sound.options.overlay": "On-screen counter",
   "d3sound.options.value.auto": "%s: Auto",
   "d3sound.options.value.percent": "%s: %s%%",
-  "d3sound.options.locked": "Handled by D3Sound — the built-in processing is off"
+  "d3sound.options.locked": "Handled by D3Sound — the built-in processing is off",
+  "d3sound.options.structure": "Structure-borne sound",
+  "d3sound.options.structure_level": "Structure-borne level",
+  "d3sound.options.conflicts": "Conflicting mods (%s)",
+  "d3sound.conflicts.title": "Mods competing for sound",
+  "d3sound.conflicts.none": "No conflicts found — all sound is ours",
+  "d3sound.conflicts.level.blocking": "breaks our engine",
+  "d3sound.conflicts.level.partial": "partly bypasses us",
+  "d3sound.conflicts.level.minor": "mostly harmless",
+  "d3sound.conflicts.hint": "Red ones are best disabled: two engines on one sound give either doubled echo or silence. The rest keep working, their sounds just bypass our physics."
 }

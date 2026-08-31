@@ -44,6 +44,8 @@ public final class Source {
 	public volatile float volume = 1f;
 	public volatile float pitch = 1f;
 	public volatile boolean stopping;
+	/** Удар по блоку: шаг, кирка, поршень, взрыв — они бьют по конструкции. */
+	public volatile boolean impact;
 	public volatile float targetSend;
 
 	public final Tap[] taps = new Tap[MAX_TAPS];
