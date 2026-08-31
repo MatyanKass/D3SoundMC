@@ -39,5 +39,16 @@
   "d3sound.options.structure_level.tip": "How loudly the structure carries sound. 100 % follows reference values per material.",
   "d3sound.options.reverb.tip": "Level of the late tail. Auto derives it from the measured decay time of the space around you.",
   "d3sound.options.doppler.tip": "Pitch shift from approach and retreat. 100 % is real, from the actual travel time of the wave.",
-  "d3sound.options.overlay.tip": "Show what the sound costs: sources, rays, quality, engine CPU share, solve time, decay time and mean free path."
+  "d3sound.options.overlay.tip": "Show what the sound costs: sources, rays, quality, engine CPU share, solve time, decay time and mean free path.",
+  "d3sound.options.presets.active": "✔ %s",
+  "d3sound.preset.realistic_high": "Realistic (High)",
+  "d3sound.preset.realistic_high.tip": "Full physics, plenty of CPU: up to 60 % of the machine, overall load ceiling 90 %. Diffraction, reflections and structure-borne sound all on, quality picked automatically. Closest to how sound really behaves; noticeably heavy.",
+  "d3sound.preset.realistic_low": "Realistic (Low)",
+  "d3sound.preset.realistic_low.tip": "The same physics three times cheaper: up to 18 % of the CPU, overall ceiling 60 %. Every mechanism is still there, just fewer rays and coarser reflections. For weaker machines that still want realism.",
+  "d3sound.preset.balanced": "Balanced",
+  "d3sound.preset.balanced.tip": "The defaults: everything on, up to 40 % of the CPU, overall ceiling 70 %. A sensible place to start.",
+  "d3sound.preset.performance": "Performance",
+  "d3sound.preset.performance.tip": "The cheapest setting that is still not vanilla audio: up to 8 % of the CPU, quality fixed at 20 %. Direction, distance and muffling behind obstacles remain; reflections and structure-borne sound are off — they cost almost all of the computation. No echo, no room tail.",
+  "d3sound.preset.cinematic": "High quality",
+  "d3sound.preset.cinematic.tip": "Pretty rather than accurate. A richer tail than reality (130 %), cleaner and duller transmission through walls (60 %), slightly exaggerated Doppler (115 %), up to 50 % of the CPU. Physically a lie, but roomier and more polished than most game audio engines."
 }

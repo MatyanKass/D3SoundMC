@@ -2,10 +2,12 @@ package dev.d3sound.mc.client.gui;
 
 import dev.d3sound.mc.client.Conflicts;
 import dev.d3sound.mc.client.D3Config;
+import dev.d3sound.mc.client.D3Preset;
 import dev.d3sound.mc.client.D3SoundEngine;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.Options;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.network.chat.Component;
@@ -38,6 +40,8 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			if (!value) engine.stopAll();
 		}));
 
+		addPresets();
+
 		this.list.addSmall(
 			percent("d3sound.options.share", 2, 100, config.cpuShare, value -> config.cpuShare = value, false),
 			percent("d3sound.options.headroom", 40, 100, config.cpuHeadroom, value -> config.cpuHeadroom = value, false),
@@ -58,6 +62,37 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 				? Component.translatable("d3sound.options.conflicts.checking")
 				: Component.translatable("d3sound.options.conflicts", conflicts.size()),
 			b -> D3ConflictsScreen.open(this)).build(), null);
+	}
+
+	/**
+	 * Готовые наборы настроек.
+	 *
+	 * Кнопка того набора, который сейчас и стоит, гасится — так видно, где вы
+	 * находитесь. Если хоть один ползунок правился руками, не горит ни одна:
+	 * это уже свой набор, и пресеты его не трогают, пока не нажать.
+	 */
+	private void addPresets() {
+		if (this.list == null) return;
+		D3Preset active = D3Preset.current(config);
+		D3Preset[] all = D3Preset.values();
+		for (int i = 0; i < all.length; i += 2) {
+			this.list.addSmall(presetButton(all[i], active),
+				i + 1 < all.length ? presetButton(all[i + 1], active) : null);
+		}
+	}
+
+	private Button presetButton(D3Preset preset, D3Preset active) {
+		Component label = preset == active
+			? Component.translatable("d3sound.options.presets.active", Component.translatable(preset.caption()))
+			: Component.translatable(preset.caption());
+		Button button = Button.builder(label, b -> {
+			preset.applyTo(config);
+			config.save();
+			this.rebuildWidgets();
+		}).tooltip(Tooltip.create(Component.translatable(preset.tooltip()))).build();
+		// текущий набор нажимать незачем — гасим, заодно и видно, какой он
+		button.active = preset != active;
+		return button;
 	}
 
 	/** Переключатель с пояснением: ключ подсказки — это ключ пункта плюс {@code .tip}. */
