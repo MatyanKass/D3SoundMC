@@ -25,6 +25,12 @@ public final class Source {
 		float loL, miL, loR, miR;
 		boolean primed;
 
+		/**
+		 * Отвод включается заново: его прошлая задержка уже не имеет смысла.
+		 * Без этого путь «прыгает» со старого расстояния на новое и щёлкает.
+		 */
+		public void arm() { primed = false; }
+
 		void prime() {
 			delayLeft = targetDelayLeft;
 			delayRight = targetDelayRight;

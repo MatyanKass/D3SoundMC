@@ -23,7 +23,13 @@ public final class D3ConflictsScreen extends OptionsSubScreen {
 	@Override
 	protected void addOptions() {
 		if (this.list == null) return;
-		List<Conflicts.Found> found = Conflicts.detect();
+		List<Conflicts.Found> found = Conflicts.result();
+		if (found == null) {
+			Conflicts.scanInBackground();
+			this.list.addSmall(new StringWidget(ROW, 20,
+				Component.translatable("d3sound.conflicts.scanning"), this.font), null);
+			return;
+		}
 		if (found.isEmpty()) {
 			this.list.addSmall(new StringWidget(ROW, 20,
 				Component.translatable("d3sound.conflicts.none").withStyle(ChatFormatting.GREEN),
@@ -31,12 +37,12 @@ public final class D3ConflictsScreen extends OptionsSubScreen {
 			return;
 		}
 		for (Conflicts.Found item : found) {
-			ChatFormatting color = switch (item.entry().level()) {
+			ChatFormatting color = switch (item.level()) {
 				case BLOCKING -> ChatFormatting.RED;
 				case PARTIAL -> ChatFormatting.GOLD;
 				case MINOR -> ChatFormatting.YELLOW;
 			};
-			String mark = switch (item.entry().level()) {
+			String mark = switch (item.level()) {
 				case BLOCKING -> "d3sound.conflicts.level.blocking";
 				case PARTIAL -> "d3sound.conflicts.level.partial";
 				case MINOR -> "d3sound.conflicts.level.minor";
@@ -46,7 +52,7 @@ public final class D3ConflictsScreen extends OptionsSubScreen {
 					.append(Component.translatable(mark)).withStyle(color),
 				this.font), null);
 			MultiLineTextWidget reason = new MultiLineTextWidget(
-				Component.literal(item.entry().reason()).withStyle(ChatFormatting.GRAY), this.font);
+				Component.literal(item.reason()).withStyle(ChatFormatting.GRAY), this.font);
 			reason.setMaxWidth(ROW);
 			this.list.addSmall(reason, null);
 		}

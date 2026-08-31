@@ -87,6 +87,9 @@ public final class Solver {
 		solutions.clear();
 	}
 
+	/** Посчитать прямо здесь и сейчас — для числового стенда. */
+	public void solveNow(Job job) { solve(job); }
+
 	/** Отдать работу решателю (не блокирует игровой поток). */
 	public void submit(Job job) { pending.set(job); }
 
@@ -172,14 +175,27 @@ public final class Solver {
 				float spread = spread(distance);
 				for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
 				solution.addTap(distance / c, bandBuffer, (float) dx, (float) dy, (float) dz);
-			} else {
+			} else if (diffraction) {
 				addDiffracted(world, job, s, c, solution);
+			} else {
+				// без расчёта обхода звук за преградой просто глохнет
+				float spread = spread(distance);
+				for (int b = 0; b < Materials.BAND_COUNT; b++) {
+					bandBuffer[b] = spread * (float) Math.pow(10.0, -(12 + 3.0 * b) / 20.0);
+				}
+				solution.addTap(distance / c, bandBuffer, (float) dx, (float) dy, (float) dz);
 			}
 
-			// --- отражения: самые заметные бины становятся отводами
-			addReflections(s, maxTaps, scale, c, solution);
+			// --- путь по самим блокам: им слышно соседей за стеной
+			if (budget.structure) addStructureBorne(world, job, s, c, solution);
 
-			solution.tailLevel = (float) Math.sqrt(tracer.lateEnergy(s)) * scale;
+			// --- отражения: самые заметные бины становятся отводами
+			if (reflections) {
+				addReflections(s, maxTaps, scale, c, solution);
+				solution.tailLevel = (float) Math.sqrt(tracer.lateEnergy(s)) * scale;
+			} else {
+				solution.tailLevel = 0f;
+			}
 			solutions.put(job.sourceId(s), solution);
 		}
 	}
@@ -333,7 +349,7 @@ public final class Solver {
 		float dx = (float) (world.originX + ex + 0.5 - world.listenerX);
 		float dy = (float) (world.originY + ey + 0.5 - world.listenerY);
 		float dz = (float) (world.originZ + ez + 0.5 - world.listenerZ);
-		solution.addTap(delay, bandBuffer, dx, dy, dz);
+		solution.structureTap = solution.addTap(delay, bandBuffer, dx, dy, dz);
 	}
 
 	/** Самые сильные ранние приходы становятся отдельными отводами. */

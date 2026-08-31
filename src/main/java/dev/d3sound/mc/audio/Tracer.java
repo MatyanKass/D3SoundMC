@@ -117,16 +117,21 @@ public final class Tracer {
 			for (int bounce = 0; bounce < maxBounces; bounce++) {
 				Ray hit = march(world, px, py, pz, dx, dy, dz, 64f);
 				if (hit.material == null) break;
+				// march возвращает один и тот же объект, а проверка видимости
+				// источника вызывает его снова — забираем попадание сразу
+				final Materials material = hit.material;
+				final float hitDistance = hit.distance;
+				final float nx = hit.nx, ny = hit.ny, nz = hit.nz;
 				totalBounces++;
-				travelled += hit.distance;
+				travelled += hitDistance;
 				float time = travelled / speedOfSound;
 				if (time > window * 4) break;
 
-				px += dx * hit.distance;
-				py += dy * hit.distance;
-				pz += dz * hit.distance;
+				px += dx * hitDistance;
+				py += dy * hitDistance;
+				pz += dz * hitDistance;
 
-				Materials m = hit.material;
+				Materials m = material;
 				float total = 0;
 				for (int b = 0; b < bands; b++) {
 					float refl = Math.max(0.002f, 1 - m.absorption[b]);
@@ -134,7 +139,7 @@ public final class Tracer {
 					total += rayEnergy[b];
 					lossDb[b] += (float) (-10 * Math.log10(refl));
 				}
-				travelTime += hit.distance / speedOfSound;
+				travelTime += hitDistance / speedOfSound;
 				if (total < 1e-7f) break;
 
 				// сбор энергии в источники
@@ -150,7 +155,7 @@ public final class Tracer {
 					if (blocked(world, px, py, pz, sx[s], sy[s], sz[s])) continue;
 
 					float inv = (float) (1 / d);
-					float cosN = Math.abs((float) (vx * inv * hit.nx + vy * inv * hit.ny + vz * inv * hit.nz));
+					float cosN = Math.abs((float) (vx * inv * nx + vy * inv * ny + vz * inv * nz));
 					float det = (float) (cosN * receiverArea / d2);
 					depositsUsed++;
 
@@ -176,13 +181,13 @@ public final class Tracer {
 				scatter = total > 0 ? scatter / total : 0.2f;
 
 				if (nextFloat() < scatter) {
-					float[] d = lambert(hit.nx, hit.ny, hit.nz);
+					float[] d = lambert(nx, ny, nz);
 					dx = d[0]; dy = d[1]; dz = d[2];
 				} else {
-					float dot = dx * hit.nx + dy * hit.ny + dz * hit.nz;
-					dx -= 2 * dot * hit.nx;
-					dy -= 2 * dot * hit.ny;
-					dz -= 2 * dot * hit.nz;
+					float dot = dx * nx + dy * ny + dz * nz;
+					dx -= 2 * dot * nx;
+					dy -= 2 * dot * ny;
+					dz -= 2 * dot * nz;
 				}
 				// чуть отступаем от поверхности
 				px += dx * 1e-3; py += dy * 1e-3; pz += dz * 1e-3;

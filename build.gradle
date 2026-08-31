@@ -32,6 +32,16 @@ processResources {
 	}
 }
 
+// Числовой стенд: считает акустику и сверяет с физикой, без единого звука
+tasks.register('bench', JavaExec) {
+	group = 'verification'
+	description = 'Прогнать числовые проверки движка (тихо, без вывода в динамики)'
+	classpath = sourceSets.main.runtimeClasspath
+	mainClass = 'dev.d3sound.mc.bench.Bench'
+	defaultCharacterEncoding = 'UTF-8'
+	jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8'
+}
+
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 25
 	it.options.encoding = 'UTF-8'

@@ -44,9 +44,11 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			percent("d3sound.options.gain", 0, 500, config.gain, value -> config.gain = value, false),
 			OptionInstance.createBoolean("d3sound.options.overlay", config.overlay, value -> config.overlay = value)
 		);
-		int conflicts = dev.d3sound.mc.client.Conflicts.detect().size();
+		java.util.List<dev.d3sound.mc.client.Conflicts.Found> conflicts = dev.d3sound.mc.client.Conflicts.result();
 		this.list.addSmall(Button.builder(
-			Component.translatable("d3sound.options.conflicts", conflicts),
+			conflicts == null
+				? Component.translatable("d3sound.options.conflicts.checking")
+				: Component.translatable("d3sound.options.conflicts", conflicts.size()),
 			b -> D3ConflictsScreen.open(this)).build(), null);
 	}
 

@@ -24,5 +24,7 @@
   "d3sound.conflicts.level.blocking": "breaks our engine",
   "d3sound.conflicts.level.partial": "partly bypasses us",
   "d3sound.conflicts.level.minor": "mostly harmless",
-  "d3sound.conflicts.hint": "Red ones are best disabled: two engines on one sound give either doubled echo or silence. The rest keep working, their sounds just bypass our physics."
+  "d3sound.conflicts.hint": "Red ones are best disabled: two engines on one sound give either doubled echo or silence. The rest keep working, their sounds just bypass our physics.",
+  "d3sound.conflicts.scanning": "Scanning mods…",
+  "d3sound.options.conflicts.checking": "Conflicting mods (scanning…)"
 }

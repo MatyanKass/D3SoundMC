@@ -86,6 +86,7 @@ public final class D3SoundEngine {
 	// снимок мира набирается слоями, чтобы не собирать 200 тысяч блоков за раз
 	private VoxelSnapshot filling;
 	private VoxelSnapshot ready;
+	private VoxelSnapshot spare;
 	private int fillLayer;
 	private long lastSubmit;
 
@@ -282,6 +283,7 @@ public final class D3SoundEngine {
 		int radius = budget.radius();
 		if (filling == null || filling.radius != radius) {
 			filling = new VoxelSnapshot(radius);
+			spare = null;
 			fillLayer = 0;
 			filling.setOrigin(mixer.listenerX, mixer.listenerY, mixer.listenerZ);
 		}
@@ -313,8 +315,13 @@ public final class D3SoundEngine {
 		}
 
 		if (fillLayer >= size) {
+			// снимки крутятся по кругу: пока решатель читает один, заполняем
+			// следующий, а третий отдыхает — так куб не выделяется заново
+			VoxelSnapshot next = spare;
+			if (next == null || next.radius != radius) next = new VoxelSnapshot(radius);
+			spare = ready;
 			ready = filling;
-			filling = new VoxelSnapshot(radius);
+			filling = next;
 			fillLayer = 0;
 			submitJob();
 		}
@@ -413,6 +420,7 @@ public final class D3SoundEngine {
 				binaural.compute(dirBuffer, distance, mixer.air, bandBuffer, ears);
 
 				Source.Tap tap = source.taps[t];
+				if (!tap.active) tap.arm();
 				tap.targetDelayLeft = ears.delayLeft;
 				tap.targetDelayRight = ears.delayRight;
 				System.arraycopy(ears.gainLeft, 0, tap.targetGainLeft, 0, 3);
@@ -438,6 +446,7 @@ public final class D3SoundEngine {
 		binaural.compute(dirBuffer, distance, mixer.air, bandBuffer, ears);
 
 		Source.Tap tap = source.taps[0];
+		if (!tap.active) tap.arm();
 		tap.targetDelayLeft = ears.delayLeft;
 		tap.targetDelayRight = ears.delayRight;
 		System.arraycopy(ears.gainLeft, 0, tap.targetGainLeft, 0, 3);

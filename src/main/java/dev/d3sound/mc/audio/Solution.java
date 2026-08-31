@@ -18,12 +18,15 @@ public final class Solution {
 	public float tailLevel;
 	public boolean directBlocked;
 	public float diffractionDb;
+	/** Какой отвод пришёл по конструкции, а не по воздуху; −1, если такого нет. */
+	public int structureTap = -1;
 
 	public void reset() {
 		tapCount = 0;
 		tailLevel = 0;
 		directBlocked = false;
 		diffractionDb = 0;
+		structureTap = -1;
 	}
 
 	public int addTap(float delaySeconds, float[] bandGains, float dx, float dy, float dz) {
@@ -42,6 +45,7 @@ public final class Solution {
 		tailLevel = other.tailLevel;
 		directBlocked = other.directBlocked;
 		diffractionDb = other.diffractionDb;
+		structureTap = other.structureTap;
 		for (int i = 0; i < tapCount; i++) {
 			delay[i] = other.delay[i];
 			System.arraycopy(other.bands[i], 0, bands[i], 0, Materials.BAND_COUNT);

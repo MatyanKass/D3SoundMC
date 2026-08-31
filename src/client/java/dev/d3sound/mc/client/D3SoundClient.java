@@ -52,6 +52,7 @@ public final class D3SoundClient implements ClientModInitializer {
 		});
 
 		D3Overlay.register();
+		Conflicts.scanInBackground();
 		D3SoundEngine.LOG.info("D3Sound: клиент инициализирован");
 	}
 
