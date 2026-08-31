@@ -240,9 +240,10 @@ public final class D3SoundEngine {
 
 		fillSnapshot(level);
 		applySolutions(level);
-		mixer.applyTail(solver.rt60, solver.meanFreePath);
+		mixer.applyTail(solver.rt60, solver.meanFreePath, solver.openness);
 		D3Config config = D3Config.get();
-		if (config.reverb > 0) mixer.setWet(config.reverb / 100f);
+		// ручная реверберация тоже знает про открытое небо: на берегу возвращаться неоткуда
+		if (config.reverb > 0) mixer.setWet(config.reverb / 100f * (1f - 0.92f * solver.openness));
 	}
 
 	/** Настройки игрока в параметры расчёта. */
@@ -471,7 +472,8 @@ public final class D3SoundEngine {
 		tap.active = true;
 		for (int t = 1; t < Source.MAX_TAPS; t++) source.taps[t].active = false;
 		source.tapCount = 1;
-		source.targetSend = 0.15f;
+		// пока решения нет, про помещение мы ничего не знаем — в хвост почти ничего
+		source.targetSend = 0.15f * Solver.spread(distance) * (1f - solver.openness);
 	}
 
 	/** Тип звука блока → акустический материал. */

@@ -48,6 +48,8 @@ public final class Solver {
 
 	public volatile float[] rt60 = new float[Materials.BAND_COUNT];
 	public volatile float meanFreePath = 4f;
+	/** Насколько место открытое: 0 — глухая коробка, 1 — чистое поле. */
+	public volatile float openness = 1f;
 	public volatile int lastSourceCount;
 	public volatile long lastSolveAt;
 
@@ -156,6 +158,7 @@ public final class Solver {
 			traceRays(world, count, c);
 			rt60 = tracer.rt60.clone();
 			meanFreePath = tracer.meanFreePath;
+			openness = tracer.openness;
 		}
 
 		int maxTaps = budget.taps();
@@ -194,7 +197,9 @@ public final class Solver {
 			// --- отражения: самые заметные бины становятся отводами
 			if (reflections) {
 				addReflections(s, maxTaps, scale, c, solution);
-				solution.tailLevel = (float) Math.sqrt(tracer.lateEnergy(s)) * scale;
+				// хвост тоже не может быть громче прямого звука
+				solution.tailLevel = Math.min(spread(distance),
+					(float) Math.sqrt(tracer.lateEnergy(s)) * scale);
 			} else {
 				solution.tailLevel = 0f;
 			}
@@ -441,8 +446,12 @@ public final class Solver {
 			if (bestBin < 0 || bestEnergy < 1e-10f) break;
 			usedBin[bestBin] = true;
 
+			// путь длиной L не может прийти громче, чем тот же звук по прямой
+			// на той же длине: отражение только теряет, приобрести ему негде
+			float bound = spread((bestBin + 0.5f) * Tracer.BIN_SECONDS * c);
 			for (int b = 0; b < Materials.BAND_COUNT; b++) {
-				bandBuffer[b] = (float) Math.sqrt(tracer.energyAt(s, bestBin, b)) * scale;
+				float level = (float) Math.sqrt(tracer.energyAt(s, bestBin, b)) * scale;
+				bandBuffer[b] = Math.min(bound, level);
 			}
 			tracer.direction(s, bestBin, dirBuffer);
 			float delay = (bestBin + 0.5f) * Tracer.BIN_SECONDS;

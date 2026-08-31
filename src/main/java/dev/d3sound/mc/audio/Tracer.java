@@ -34,14 +34,24 @@ public final class Tracer {
 	private final float[] lateEnergy = new float[MAX_SOURCES];
 
 	private final float[] rayEnergy = new float[Materials.BAND_COUNT];
-	private final float[] lossDb = new float[Materials.BAND_COUNT];
+	/** Сумма поглощений по всем попаданиям — из неё выходит среднее по помещению. */
+	private final float[] absorbed = new float[Materials.BAND_COUNT];
 	public final float[] rt60 = new float[Materials.BAND_COUNT];
 
 	private long seed = 0x9E3779B97F4A7C15L;
 	public int raysUsed;
 	public int bouncesUsed;
 	public int depositsUsed;
+	/** Лучи, ушедшие в небо: их энергия не возвращается никогда. */
+	public int escapes;
 	public float meanFreePath;
+	/**
+	 * Насколько место открытое, 0…1.
+	 *
+	 * Доля лучей, улетевших наружу вместо того, чтобы отразиться. В закрытой
+	 * комнате около нуля, в чистом поле почти единица.
+	 */
+	public float openness;
 	private float travelTimeTotal;
 
 	private float nextFloat() {
@@ -82,10 +92,11 @@ public final class Tracer {
 			java.util.Arrays.fill(dirZ[s], 0f);
 			lateEnergy[s] = 0f;
 		}
-		java.util.Arrays.fill(lossDb, 0f);
+		java.util.Arrays.fill(absorbed, 0f);
 		raysUsed = 0;
 		bouncesUsed = 0;
 		depositsUsed = 0;
+		escapes = 0;
 		travelTimeTotal = 0;
 	}
 
@@ -110,6 +121,7 @@ public final class Tracer {
 		final float window = BINS * BIN_SECONDS;
 		float travelTime = 0;
 		int totalBounces = 0;
+		int escaped = 0;
 		// у каждого куска свой поворот спирали, иначе они лягут одинаково
 		seed ^= (long) rayFrom * 0x9E3779B97F4A7C15L;
 
@@ -139,7 +151,12 @@ public final class Tracer {
 
 			for (int bounce = 0; bounce < maxBounces; bounce++) {
 				Ray hit = march(world, px, py, pz, dx, dy, dz, 64f);
-				if (hit.material == null) break;
+				if (hit.material == null) {
+					// луч ушёл в небо: эта энергия к слушателю уже не вернётся,
+					// и именно поэтому под открытым небом нет эха
+					escaped++;
+					break;
+				}
 				// march возвращает один и тот же объект, а проверка видимости
 				// источника вызывает его снова — забираем попадание сразу
 				final Materials material = hit.material;
@@ -160,7 +177,7 @@ public final class Tracer {
 					float refl = Math.max(0.002f, 1 - m.absorption[b]);
 					rayEnergy[b] *= refl;
 					total += rayEnergy[b];
-					lossDb[b] += (float) (-10 * Math.log10(refl));
+					absorbed[b] += m.absorption[b];
 				}
 				travelTime += hitDistance / speedOfSound;
 				if (total < 1e-7f) break;
@@ -218,6 +235,7 @@ public final class Tracer {
 		}
 
 		bouncesUsed += totalBounces;
+		escapes += escaped;
 		travelTimeTotal += travelTime;
 	}
 
@@ -233,20 +251,34 @@ public final class Tracer {
 			}
 			lateEnergy[s] += other.lateEnergy[s];
 		}
-		for (int b = 0; b < bands; b++) lossDb[b] += other.lossDb[b];
+		for (int b = 0; b < bands; b++) absorbed[b] += other.absorbed[b];
 		raysUsed += other.raysUsed;
+		escapes += other.escapes;
 		bouncesUsed += other.bouncesUsed;
 		depositsUsed += other.depositsUsed;
 		travelTimeTotal += other.travelTimeTotal;
 	}
 
-	/** Свести статистику лучей во время реверберации и свободный пробег. */
+	/**
+	 * Свести статистику лучей во время реверберации и свободный пробег.
+	 *
+	 * Считаем по Эйрингу, но встречу с небом засчитываем как поглощение целиком:
+	 * улетевший луч не вернётся, и для помещения это то же самое, что открытое
+	 * окно во всю стену. Без этого каменный берег под открытым небом получал
+	 * время затухания собора — там ведь тоже сплошной камень с малым
+	 * поглощением, просто половина звука уходит вверх и не возвращается.
+	 */
 	public void finish(float speedOfSound) {
-		int totalBounces = bouncesUsed;
-		meanFreePath = totalBounces > 0 ? (travelTimeTotal * speedOfSound) / totalBounces : 4f;
-		float meanFreeTime = totalBounces > 0 ? travelTimeTotal / totalBounces : 0.02f;
+		int hits = bouncesUsed;
+		int events = hits + escapes;
+		openness = events > 0 ? (float) escapes / events : 1f;
+		meanFreePath = hits > 0 ? (travelTimeTotal * speedOfSound) / hits : 4f;
+		float meanFreeTime = hits > 0 ? travelTimeTotal / hits : 0.02f;
 		for (int b = 0; b < bands; b++) {
-			float dbPerReflection = totalBounces > 0 ? lossDb[b] / totalBounces : 6f;
+			// среднее поглощение: у неба оно единица, у стен своё
+			float mean = events > 0 ? (absorbed[b] + escapes) / events : 0.5f;
+			mean = Math.max(0.001f, Math.min(0.999f, mean));
+			float dbPerReflection = (float) (-10 * Math.log10(1 - mean));
 			float dbPerSecond = dbPerReflection / Math.max(1e-4f, meanFreeTime);
 			rt60[b] = Math.min(12f, 60f / Math.max(0.5f, dbPerSecond));
 		}

@@ -28,6 +28,7 @@ public final class Bench {
 		room();
 		occlusion();
 		structure();
+		outdoor();
 		toggles();
 		budget();
 		mixer();
@@ -227,6 +228,129 @@ public final class Bench {
 			String.format("%.1f дБ разницы", 20 * Math.log10(Math.max(1e-12, woolLevel) / Math.max(1e-12, stoneLevel))));
 	}
 
+
+	/* --- открытое место: берег, скала, небо над головой --- */
+
+	private static void outdoor() {
+		System.out.println();
+		System.out.println("== открытое место ==");
+
+		VoxelSnapshot open = outdoors(20, false);
+		Solution far = solve(open, open.listenerX + 20, open.listenerY, open.listenerZ, false);
+		double directFar = energy(far, 0);
+		double loudest = 0;
+		int loudestTap = 0;
+		for (int t = 1; t < far.tapCount; t++) {
+			double e = energy(far, t);
+			if (e > loudest) { loudest = e; loudestTap = t; }
+		}
+		System.out.printf("  ровное поле: прямой %.4f, самое громкое отражение %.4f (отвод %d из %d), хвост %.4f%n",
+			directFar, loudest, loudestTap, far.tapCount, far.tailLevel);
+		expect("в поле прямой звук громче любого отражения", loudest < directFar,
+			String.format("%.1f дБ разницы", 20 * Math.log10(Math.max(1e-9, loudest) / Math.max(1e-9, directFar))));
+		expect("в поле хвоста почти нет", far.tailLevel < directFar,
+			String.format("хвост %.4f, прямой %.4f", far.tailLevel, directFar));
+
+		VoxelSnapshot cliff = stoneCanyon(30);
+		Solution near = solve(cliff, cliff.listenerX + 8, cliff.listenerY, cliff.listenerZ, false);
+		Tracer probe = new Tracer();
+		probe.trace(cliff, new double[]{cliff.toLocalX(cliff.listenerX) + 8}, new double[]{cliff.toLocalY(cliff.listenerY)},
+			new double[]{cliff.toLocalZ(cliff.listenerZ)}, 1, 2048, 12, 343f, 0.7f, 77L);
+		System.out.printf("  каменный каньон: RT60 %.2f с, пробег %.1f м, открытость %.0f%%%n",
+			probe.rt60[2], probe.meanFreePath, probe.openness * 100);
+		expect("у каменной скалы под небом нет собора", probe.rt60[2] < 2f,
+			String.format("RT60 %.2f с", probe.rt60[2]));
+		expect("открытое место видно по улетевшим лучам", probe.openness > 0.3f,
+			String.format("%.0f%% лучей ушло в небо", probe.openness * 100));
+
+		// в закрытой коробке всё наоборот: лучи не улетают, хвост длинный
+		VoxelSnapshot room = box(16, 12, Materials.STONE);
+		Tracer inside = new Tracer();
+		inside.trace(room, new double[]{room.toLocalX(room.listenerX) + 3}, new double[]{room.toLocalY(room.listenerY)},
+			new double[]{room.toLocalZ(room.listenerZ)}, 1, 2048, 12, 343f, 0.7f, 77L);
+		System.out.printf("  каменная комната: RT60 %.2f с, открытость %.0f%%%n", inside.rt60[2], inside.openness * 100);
+		expect("в закрытом камне хвост остаётся длинным", inside.rt60[2] > 5f,
+			String.format("RT60 %.2f с", inside.rt60[2]));
+		expect("закрытая комната не считается открытой", inside.openness < 0.05f,
+			String.format("%.1f%%", inside.openness * 100));
+
+		Mixer wetTest = new Mixer();
+		wetTest.applyTail(inside.rt60, inside.meanFreePath, inside.openness);
+		float wetRoom = wetTest.wet();
+		wetTest.applyTail(probe.rt60, probe.meanFreePath, probe.openness);
+		float wetOpen = wetTest.wet();
+		expect("на открытом месте хвоста подмешивается меньше", wetOpen < wetRoom * 0.3f,
+			String.format("%.2f против %.2f", wetOpen, wetRoom));
+
+		// далёкий источник: отражения не должны перекрикивать прямой звук
+		Solution distant = solve(cliff, cliff.listenerX, cliff.listenerY, cliff.listenerZ + 25, false);
+		double directFarCliff = energy(distant, 0);
+		double loudFarCliff = 0;
+		for (int t = 1; t < distant.tapCount; t++) loudFarCliff = Math.max(loudFarCliff, energy(distant, t));
+		System.out.printf("  источник за 25 м: прямой %.4f, громчайшее отражение %.4f (%d отводов)%n",
+			directFarCliff, loudFarCliff, distant.tapCount);
+		expect("издалека отражение не громче прямого звука", loudFarCliff <= directFarCliff,
+			String.format("%.1f дБ разницы", 20 * Math.log10(Math.max(1e-9, loudFarCliff) / Math.max(1e-9, directFarCliff))));
+		double direct = energy(near, 0);
+		double sum = 0;
+		for (int t = 1; t < near.tapCount; t++) sum += energy(near, t);
+		System.out.printf("  у скалы: прямой %.4f, сумма отражений %.4f, хвост %.4f%n", direct, sum, near.tailLevel);
+		expect("у скалы отражения не громче прямого пути", sum < direct,
+			String.format("%.1f дБ разницы", 20 * Math.log10(Math.max(1e-9, sum) / Math.max(1e-9, direct))));
+
+		Budget budget = new Budget();
+		budget.manualQuality = 0.5f;
+		budget.update(1f);
+		Tracer tracer = new Tracer();
+		double[] sx = {open.toLocalX(open.listenerX) + 10};
+		double[] sy = {open.toLocalY(open.listenerY)};
+		double[] sz = {open.toLocalZ(open.listenerZ)};
+		tracer.trace(open, sx, sy, sz, 1, 2048, 12, 343f, 0.7f, 4242L);
+		System.out.printf("  время затухания в поле: %.2f с, свободный пробег %.1f м%n", tracer.rt60[2], tracer.meanFreePath);
+		expect("под открытым небом эха нет", tracer.rt60[2] < 0.6f,
+			String.format("RT60 %.2f с", tracer.rt60[2]));
+	}
+
+	/** Каменный берег со скалой — то же, что на скриншоте у игрока. */
+	private static VoxelSnapshot stoneCanyon(int radius) {
+		VoxelSnapshot world = new VoxelSnapshot(radius);
+		world.setOrigin(0.5, 0.5, 0.5);
+		int c = radius;
+		for (int x = 0; x < world.size; x++) {
+			for (int y = 0; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) {
+					boolean rock = y < c - 1 || x > c + 12;
+					world.set(x, y, z, rock ? (byte) Materials.STONE.ordinal() : VoxelSnapshot.AIR, (byte) 100);
+				}
+			}
+		}
+		return world;
+	}
+
+	/** Ровная земля до горизонта; при cliff — ещё и каменная стена сбоку. */
+	private static VoxelSnapshot outdoors(int radius, boolean cliff) {
+		VoxelSnapshot world = new VoxelSnapshot(radius);
+		world.setOrigin(0.5, 0.5, 0.5);
+		int c = radius;
+		for (int x = 0; x < world.size; x++) {
+			for (int y = 0; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) {
+					world.set(x, y, z, y < c - 1 ? (byte) Materials.DIRT.ordinal() : VoxelSnapshot.AIR, (byte) 100);
+				}
+			}
+		}
+		if (cliff) {
+			for (int y = c - 1; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) {
+					for (int x = c + 12; x < world.size; x++) {
+						world.set(x, y, z, (byte) Materials.STONE.ordinal(), (byte) 100);
+					}
+				}
+			}
+		}
+		return world;
+	}
+
 	/* --- переключатели в настройках должны и правда что-то менять --- */
 
 	private static void toggles() {
@@ -342,6 +466,26 @@ public final class Bench {
 			}
 		}
 		expect("нет NaN и бесконечностей", finite, "чисто");
+
+		// тихий и средний сигнал ограничитель обязан пропускать как есть
+		Mixer clean = new Mixer();
+		float[] probe = new float[256];
+		for (int i = 0; i < probe.length; i++) probe[i] = (float) Math.sin(2 * Math.PI * 200 * i / 48000.0) * 0.5f;
+		Source plain = new Source(2, "clean", probe, 48000, true, false);
+		Source.Tap direct = plain.taps[0];
+		for (int i = 0; i < 3; i++) { direct.targetGainLeft[i] = 1f / 3; direct.targetGainRight[i] = 1f / 3; }
+		direct.active = true;
+		clean.setWet(0f);
+		clean.add(plain);
+		double worst = 0;
+		for (int block = 0; block < 20; block++) {
+			clean.render(l, r, 256);
+			for (int i = 0; i < 256; i++) worst = Math.max(worst, Math.abs(l[i]));
+		}
+		// три полосы с одинаковым усилением складываются обратно в исходный сигнал
+		double expectedPeak = 0.5 / 3;
+		expect("ограничитель не трогает обычную громкость", Math.abs(worst - expectedPeak) < expectedPeak * 0.01,
+			String.format("пик %.4f, ждём %.4f", worst, expectedPeak));
 		expect("сигнал не пропал", peak > 0.05, String.format("пик %.3f", peak));
 		expect("сигнал не перегружен", peak <= 1.0001, String.format("пик %.3f", peak));
 
