@@ -1,0 +1,93 @@
+package dev.d3sound.mc.audio;
+
+import java.lang.management.ManagementFactory;
+
+/**
+ * Автоподстройка нагрузки.
+ *
+ * Идея простая: смотреть, насколько занят процессор, и брать столько, сколько
+ * он готов отдать, оставляя запас. Есть свободные ядра — поднимаем число лучей,
+ * глубину отражений и частоту пересчёта; система загружена или прогон затянулся —
+ * быстро отступаем.
+ *
+ * Вверх качество ползёт медленно, вниз падает резко: лучше на секунду потерять
+ * в точности, чем уронить кадры.
+ */
+public final class Budget {
+	private final com.sun.management.OperatingSystemMXBean os;
+
+	/** До какой загрузки системы поднимаем качество. */
+	public volatile float targetLoad = 0.70f;
+	/** Выше этой — резко сбрасываем. */
+	public volatile float panicLoad = 0.88f;
+	/** Верхняя граница времени одного прогона, мс. */
+	public volatile float maxSolveMs = 12f;
+
+	/** Текущее качество 0…1. */
+	private float quality = 0.35f;
+	private float loadAvg = 0.4f;
+	private float solveAvg = 4f;
+
+	public Budget() {
+		com.sun.management.OperatingSystemMXBean bean = null;
+		try {
+			bean = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+		} catch (Throwable ignored) {
+			// на экзотических JVM просто останемся на средних настройках
+		}
+		this.os = bean;
+	}
+
+	/** Учесть результат очередного прогона. */
+	public void update(float solveMs) {
+		solveAvg += (solveMs - solveAvg) * 0.3f;
+
+		float load = 0.5f;
+		if (os != null) {
+			double sys = os.getCpuLoad();
+			double self = os.getProcessCpuLoad();
+			double value = Math.max(sys, self);
+			if (value >= 0 && value <= 1) load = (float) value;
+		}
+		loadAvg += (load - loadAvg) * 0.25f;
+
+		boolean tooSlow = solveAvg > maxSolveMs;
+		if (loadAvg > panicLoad || tooSlow) {
+			quality -= 0.12f;                       // отступаем резко
+		} else if (loadAvg < targetLoad - 0.12f && solveAvg < maxSolveMs * 0.6f) {
+			quality += 0.02f;                       // поднимаемся осторожно
+		} else if (loadAvg > targetLoad) {
+			quality -= 0.03f;
+		}
+		quality = Math.max(0.05f, Math.min(1f, quality));
+	}
+
+	public float quality() { return quality; }
+	public float load() { return loadAvg; }
+	public float solveMs() { return solveAvg; }
+
+	/* --- во что превращается качество --- */
+
+	public int rays() { return Math.round(lerp(96, 3072, curve(quality))); }
+
+	public int bounces() { return Math.round(lerp(4, 16, quality)); }
+
+	/** Сколько отражений на источник доходит до микшера. */
+	public int taps() { return Math.round(lerp(2, Solution.MAX_TAPS, quality)); }
+
+	/** Период пересчёта, мс. */
+	public int intervalMs() { return Math.round(lerp(260, 70, quality)); }
+
+	/** Радиус снимка мира, блоков. */
+	public int radius() { return Math.round(lerp(14, 32, quality)); }
+
+	private static float lerp(float a, float b, float t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
+
+	/** Лучи дороже всего — растут не линейно, а мягче. */
+	private static float curve(float q) { return q * q * 0.7f + q * 0.3f; }
+
+	public String describe() {
+		return String.format("качество %d%% · загрузка ЦП %d%% · прогон %.1f мс · лучей %d · отскоков %d",
+			Math.round(quality * 100), Math.round(loadAvg * 100), solveAvg, rays(), bounces());
+	}
+}

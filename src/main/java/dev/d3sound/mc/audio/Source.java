@@ -1,118 +1,134 @@
 package dev.d3sound.mc.audio;
 
 /**
- * Один звучащий источник.
+ * Один звучащий источник и все пути, которыми его звук доходит до ушей.
  *
- * Курсор идёт по сэмплам исходного звука, а каждое ухо читает из буфера
- * со своей задержкой — распространение и межушная разница получаются сами
- * собой: пока звук «не долетел», ухо читает то, чего ещё нет, и молчит.
- * Оттуда же берётся доплер: задержка плавно меняется вместе с расстоянием.
- *
- * Спектр задан тремя полосами (раздел 500 Гц и 4 кГц) — столько фильтров
- * можно позволить на источник в реальном времени.
+ * Каждый путь — отдельный отвод: своя задержка на каждое ухо и свой спектр.
+ * Первый отвод это прямой звук (или обходной, если прямой перекрыт), остальные —
+ * отражения. Курсор идёт по семплам исходного звука, а отводы читают из буфера
+ * назад по времени, поэтому задержка распространения, эхо и доплер получаются
+ * из самой геометрии.
  */
 public final class Source {
+	public static final int MAX_TAPS = Solution.MAX_TAPS;
+
+	/** Один путь звука. */
+	public static final class Tap {
+		public volatile boolean active;
+		public volatile float targetDelayLeft, targetDelayRight;
+		public final float[] targetGainLeft = new float[3];
+		public final float[] targetGainRight = new float[3];
+
+		float delayLeft, delayRight;
+		final float[] gainLeft = new float[3];
+		final float[] gainRight = new float[3];
+		float loL, miL, loR, miR;
+		boolean primed;
+
+		void prime() {
+			delayLeft = targetDelayLeft;
+			delayRight = targetDelayRight;
+			for (int i = 0; i < 3; i++) { gainLeft[i] = 0; gainRight[i] = 0; }
+			primed = true;
+		}
+	}
+
 	public final String name;
 	public final float[] pcm;
 	public final int sampleRate;
 	public final boolean loop;
-	public final boolean relative;      // привязан к слушателю: интерфейс, музыка
+	public final boolean relative;
+	public final long id;
 
 	public volatile double x, y, z;
 	public volatile float volume = 1f;
 	public volatile float pitch = 1f;
 	public volatile boolean stopping;
-
-	/** Целевые параметры, их считает физика на игровом потоке. */
-	public volatile float targetDelayLeft, targetDelayRight;
-	public final float[] targetGainLeft = new float[3];
-	public final float[] targetGainRight = new float[3];
 	public volatile float targetSend;
 
-	/** Текущие сглаженные значения — только для аудиопотока. */
-	private float delayLeft, delayRight;
-	private final float[] gainLeft = new float[3];
-	private final float[] gainRight = new float[3];
-	private float send;
-	private boolean primed;
+	public final Tap[] taps = new Tap[MAX_TAPS];
+	public volatile int tapCount = 1;
 
+	private float send;
 	private double cursor;
-	private float loL, miL, loR, miR;
 	public boolean finished;
 
-	public Source(String name, float[] pcm, int sampleRate, boolean loop, boolean relative) {
+	public Source(long id, String name, float[] pcm, int sampleRate, boolean loop, boolean relative) {
+		this.id = id;
 		this.name = name;
 		this.pcm = pcm;
 		this.sampleRate = sampleRate;
 		this.loop = loop;
 		this.relative = relative;
+		for (int i = 0; i < MAX_TAPS; i++) taps[i] = new Tap();
 	}
 
-	public double cursorSeconds() { return cursor / sampleRate; }
+	public double lengthSeconds() { return (double) pcm.length / sampleRate; }
 
 	/**
-	 * Смешать порцию в выходные буферы.
+	 * Смешать порцию.
 	 *
-	 * @param aLow  коэффициент однополюсника нижнего раздела
-	 * @param aHigh коэффициент верхнего раздела
+	 * @param aLow    коэффициент нижнего раздела полос
+	 * @param aHigh   коэффициент верхнего раздела
 	 * @param kSmooth скорость сглаживания параметров
 	 */
 	public void mix(float[] outL, float[] outR, float[] sendBus, int frames,
 	                int outRate, float aLow, float aHigh, float kSmooth) {
 		if (finished) return;
-		if (!primed) {
-			delayLeft = targetDelayLeft;
-			delayRight = targetDelayRight;
-			System.arraycopy(targetGainLeft, 0, gainLeft, 0, 3);
-			System.arraycopy(targetGainRight, 0, gainRight, 0, 3);
-			send = targetSend;
-			primed = true;
-		}
 
 		final double rate = (double) sampleRate / outRate * Math.max(0.05f, pitch);
-		final float dlTarget = targetDelayLeft * sampleRate;
-		final float drTarget = targetDelayRight * sampleRate;
+		final int count = Math.min(tapCount, MAX_TAPS);
+		final float vol = volume;
 
 		for (int i = 0; i < frames; i++) {
-			delayLeft += (dlTarget - delayLeft) * kSmooth;
-			delayRight += (drTarget - delayRight) * kSmooth;
-			for (int b = 0; b < 3; b++) {
-				gainLeft[b] += (targetGainLeft[b] - gainLeft[b]) * kSmooth;
-				gainRight[b] += (targetGainRight[b] - gainRight[b]) * kSmooth;
-			}
 			send += (targetSend - send) * kSmooth;
+			float dry = sample(cursor);
+			if (sendBus != null) sendBus[i] += dry * send;
 
-			float sl = sample(cursor - delayLeft);
-			float sr = sample(cursor - delayRight);
+			for (int t = 0; t < count; t++) {
+				Tap tap = taps[t];
+				if (!tap.active) continue;
+				if (!tap.primed) tap.prime();
 
-			// три полосы двумя однополюсниками
-			loL += aLow * (sl - loL);
-			float restL = sl - loL;
-			miL += aHigh * (restL - miL);
-			float hiL = restL - miL;
-			outL[i] += gainLeft[0] * loL + gainLeft[1] * miL + gainLeft[2] * hiL;
+				float dl = tap.targetDelayLeft * sampleRate;
+				float dr = tap.targetDelayRight * sampleRate;
+				tap.delayLeft += (dl - tap.delayLeft) * kSmooth;
+				tap.delayRight += (dr - tap.delayRight) * kSmooth;
 
-			loR += aLow * (sr - loR);
-			float restR = sr - loR;
-			miR += aHigh * (restR - miR);
-			float hiR = restR - miR;
-			outR[i] += gainRight[0] * loR + gainRight[1] * miR + gainRight[2] * hiR;
+				float gl0 = tap.gainLeft[0] += (tap.targetGainLeft[0] * vol - tap.gainLeft[0]) * kSmooth;
+				float gl1 = tap.gainLeft[1] += (tap.targetGainLeft[1] * vol - tap.gainLeft[1]) * kSmooth;
+				float gl2 = tap.gainLeft[2] += (tap.targetGainLeft[2] * vol - tap.gainLeft[2]) * kSmooth;
+				float gr0 = tap.gainRight[0] += (tap.targetGainRight[0] * vol - tap.gainRight[0]) * kSmooth;
+				float gr1 = tap.gainRight[1] += (tap.targetGainRight[1] * vol - tap.gainRight[1]) * kSmooth;
+				float gr2 = tap.gainRight[2] += (tap.targetGainRight[2] * vol - tap.gainRight[2]) * kSmooth;
 
-			// в реверберацию уходит сухой сигнал в точке излучения
-			if (sendBus != null) sendBus[i] += sample(cursor) * send;
+				if (gl0 + gl1 + gl2 + gr0 + gr1 + gr2 < 1e-6f) continue;
+
+				float sl = sample(cursor - tap.delayLeft);
+				tap.loL += aLow * (sl - tap.loL);
+				float restL = sl - tap.loL;
+				tap.miL += aHigh * (restL - tap.miL);
+				outL[i] += gl0 * tap.loL + gl1 * tap.miL + gl2 * (restL - tap.miL);
+
+				float sr = sample(cursor - tap.delayRight);
+				tap.loR += aLow * (sr - tap.loR);
+				float restR = sr - tap.loR;
+				tap.miR += aHigh * (restR - tap.miR);
+				outR[i] += gr0 * tap.loR + gr1 * tap.miR + gr2 * (restR - tap.miR);
+			}
 
 			cursor += rate;
 			if (cursor >= pcm.length) {
 				if (loop) cursor -= pcm.length;
-				else if (cursor - delayRight > pcm.length + sampleRate * 0.5) { finished = true; return; }
+				else if (cursor > pcm.length + sampleRate * 0.6) { finished = true; return; }
 			}
 		}
 		if (stopping) finished = true;
 	}
 
-	/** Чтение с дробной позицией (линейная интерполяция). */
+	/** Чтение с дробной позицией; до прихода звука в этой точке тишина. */
 	private float sample(double index) {
-		if (index < 0) return 0f;               // звук ещё не долетел
+		if (index < 0) return 0f;
 		if (index >= pcm.length - 1) {
 			if (!loop) return 0f;
 			index = index % pcm.length;

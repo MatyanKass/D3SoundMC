@@ -1,7 +1,6 @@
 package dev.d3sound.mc.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import dev.d3sound.mc.audio.VoxelAcoustics;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -42,15 +41,7 @@ public final class D3SoundClient implements ClientModInitializer {
 			}
 
 			while (infoKey.consumeClick()) {
-				VoxelAcoustics.Probe probe = engine.lastProbe();
-				if (probe == null) {
-					say(client, "D3Sound: помещение ещё не измерено");
-				} else {
-					say(client, String.format(
-						"D3Sound: RT60 %.2f с · пробег %.1f м · открытость %d%% · поглощение %.2f · источников %d",
-						probe.rt60[2], probe.meanFreePath, Math.round(probe.openness * 100),
-						probe.meanAbsorption, engine.activeSources()));
-				}
+				say(client, engine.status());
 			}
 
 			engine.clientTick(client);

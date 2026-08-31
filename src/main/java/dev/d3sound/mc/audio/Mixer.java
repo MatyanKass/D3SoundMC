@@ -33,7 +33,6 @@ public final class Mixer {
 	public volatile double listenerX, listenerY, listenerZ;
 	public volatile float listenerYaw, listenerPitch;
 	public volatile Air air = new Air(20, 45, 101.325f);
-	public volatile VoxelAcoustics.Probe room;
 
 	public Mixer() {
 		aLow = onePole(XOVER_LOW);
@@ -58,14 +57,17 @@ public final class Mixer {
 
 	public void setWet(float wet) { this.wet = Math.max(0f, Math.min(2f, wet)); }
 
-	/** Настроить хвост под текущее помещение. */
-	public void applyRoom(VoxelAcoustics.Probe probe) {
-		this.room = probe;
-		if (probe == null) return;
-		float damping = 0.35f + 0.4f * probe.openness;
-		reverb.configure(probe.rt60[2], probe.meanFreePath, air.speedOfSound, damping);
-		// на открытом воздухе отражать нечему
-		setWet(0.9f * (1f - probe.openness * 0.9f));
+	/**
+	 * Настроить хвост по тому, что намерил решатель: время реверберации и
+	 * средний свободный пробег приходят из статистики самих лучей.
+	 */
+	public void applyTail(float[] rt60, float meanFreePath) {
+		if (rt60 == null || rt60.length < 3) return;
+		float mid = rt60[2];
+		// короткий хвост в открытом поле, длинный в камне — демпфирование по верхам
+		float damping = 0.35f + 0.4f * Math.max(0f, Math.min(1f, 1f - mid / 3f));
+		reverb.configure(mid, meanFreePath, air.speedOfSound, damping);
+		setWet(Math.min(1.2f, 0.35f + mid * 0.5f));
 	}
 
 	/**

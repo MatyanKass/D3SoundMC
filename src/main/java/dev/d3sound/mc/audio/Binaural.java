@@ -32,24 +32,17 @@ public final class Binaural {
 	private final float[] bandGain = new float[Materials.BAND_COUNT];
 
 	/**
-	 * Расчёт для одного пути.
+	 * Расчёт одного пути звука.
 	 *
-	 * @param dir       направление на источник в системе слушателя
-	 *                  (x — вправо, y — вверх, z — вперёд)
-	 * @param distance  расстояние, м
-	 * @param air       модель воздуха
-	 * @param occlusion коэффициенты прохождения сквозь преграды по полосам (или null)
-	 * @param volume    громкость источника
+	 * @param dir      направление прихода в системе слушателя
+	 *                 (x — вправо, y — вверх, z — вперёд)
+	 * @param distance длина пути, м — от неё задержка и поглощение воздуха
+	 * @param air      модель воздуха
+	 * @param pathGain усиление пути по полосам: расхождение, материалы, дифракция
 	 */
-	public void compute(float[] dir, float distance, Air air, float[] occlusion,
-	                    float volume, float minDistance, Ears out) {
-		float d = Math.max(minDistance, distance);
-		float spread = volume / d;
-
+	public void compute(float[] dir, float distance, Air air, float[] pathGain, Ears out) {
 		for (int b = 0; b < Materials.BAND_COUNT; b++) {
-			float g = spread * air.gain(b, distance);
-			if (occlusion != null) g *= occlusion[b];
-			bandGain[b] = g;
+			bandGain[b] = pathGain[b] * air.gain(b, distance);
 		}
 
 		float x = dir[0], y = dir[1], z = dir[2];
