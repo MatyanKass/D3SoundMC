@@ -42,6 +42,7 @@ public final class Tracer {
 	public int bouncesUsed;
 	public int depositsUsed;
 	public float meanFreePath;
+	private float travelTimeTotal;
 
 	private float nextFloat() {
 		seed ^= seed << 13; seed ^= seed >>> 7; seed ^= seed << 17;
@@ -67,6 +68,13 @@ public final class Tracer {
 	 */
 	public void trace(VoxelSnapshot world, double[] sx, double[] sy, double[] sz, int sourceCount,
 	                  int rays, int maxBounces, float speedOfSound, float receiverRadius, long randomSeed) {
+		reset(sourceCount);
+		traceSlice(world, sx, sy, sz, sourceCount, 0, rays, rays, maxBounces, speedOfSound, receiverRadius, randomSeed);
+		finish(speedOfSound);
+	}
+
+	/** Подготовить накопители под новый прогон. */
+	public void reset(int sourceCount) {
 		for (int s = 0; s < sourceCount; s++) {
 			java.util.Arrays.fill(energy[s], 0f);
 			java.util.Arrays.fill(dirX[s], 0f);
@@ -75,10 +83,23 @@ public final class Tracer {
 			lateEnergy[s] = 0f;
 		}
 		java.util.Arrays.fill(lossDb, 0f);
-		seed = randomSeed | 1L;
-		raysUsed = rays;
+		raysUsed = 0;
 		bouncesUsed = 0;
 		depositsUsed = 0;
+		travelTimeTotal = 0;
+	}
+
+	/**
+	 * Посчитать свою долю лучей.
+	 *
+	 * Направления берутся из общей спирали по номеру луча, поэтому куски не
+	 * пересекаются и вместе дают то же покрытие сферы, что и один проход.
+	 */
+	public void traceSlice(VoxelSnapshot world, double[] sx, double[] sy, double[] sz, int sourceCount,
+	                       int rayFrom, int rayTo, int rays, int maxBounces,
+	                       float speedOfSound, float receiverRadius, long randomSeed) {
+		seed = randomSeed | 1L;
+		raysUsed += rayTo - rayFrom;
 
 		double lx = world.toLocalX(world.listenerX);
 		double ly = world.toLocalY(world.listenerY);
@@ -89,11 +110,13 @@ public final class Tracer {
 		final float window = BINS * BIN_SECONDS;
 		float travelTime = 0;
 		int totalBounces = 0;
+		// у каждого куска свой поворот спирали, иначе они лягут одинаково
+		seed ^= (long) rayFrom * 0x9E3779B97F4A7C15L;
 
 		float rotA = nextFloat() * (float) Math.PI * 2;
 		float rotB = nextFloat() * (float) Math.PI * 2;
 
-		for (int r = 0; r < rays; r++) {
+		for (int r = rayFrom; r < rayTo; r++) {
 			// равномерное направление по сфере
 			double k = r + 0.5;
 			double phi = Math.acos(1 - 2 * k / rays);
@@ -194,9 +217,34 @@ public final class Tracer {
 			}
 		}
 
-		bouncesUsed = totalBounces;
-		meanFreePath = totalBounces > 0 ? (travelTime * speedOfSound) / totalBounces : 4f;
-		float meanFreeTime = totalBounces > 0 ? travelTime / totalBounces : 0.02f;
+		bouncesUsed += totalBounces;
+		travelTimeTotal += travelTime;
+	}
+
+	/** Забрать к себе результат чужого куска. */
+	public void mergeFrom(Tracer other, int sourceCount) {
+		for (int s = 0; s < sourceCount; s++) {
+			float[] mine = energy[s], theirs = other.energy[s];
+			for (int i = 0; i < mine.length; i++) mine[i] += theirs[i];
+			for (int bin = 0; bin < BINS; bin++) {
+				dirX[s][bin] += other.dirX[s][bin];
+				dirY[s][bin] += other.dirY[s][bin];
+				dirZ[s][bin] += other.dirZ[s][bin];
+			}
+			lateEnergy[s] += other.lateEnergy[s];
+		}
+		for (int b = 0; b < bands; b++) lossDb[b] += other.lossDb[b];
+		raysUsed += other.raysUsed;
+		bouncesUsed += other.bouncesUsed;
+		depositsUsed += other.depositsUsed;
+		travelTimeTotal += other.travelTimeTotal;
+	}
+
+	/** Свести статистику лучей во время реверберации и свободный пробег. */
+	public void finish(float speedOfSound) {
+		int totalBounces = bouncesUsed;
+		meanFreePath = totalBounces > 0 ? (travelTimeTotal * speedOfSound) / totalBounces : 4f;
+		float meanFreeTime = totalBounces > 0 ? travelTimeTotal / totalBounces : 0.02f;
 		for (int b = 0; b < bands; b++) {
 			float dbPerReflection = totalBounces > 0 ? lossDb[b] / totalBounces : 6f;
 			float dbPerSecond = dbPerReflection / Math.max(1e-4f, meanFreeTime);

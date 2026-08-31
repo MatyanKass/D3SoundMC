@@ -6,7 +6,7 @@
   "d3sound.options.title": "D3Sound — sound physics",
   "d3sound.options.enabled": "Custom sound engine",
   "d3sound.options.quality": "Simulation quality",
-  "d3sound.options.headroom": "System load ceiling",
+  "d3sound.options.headroom": "Max total CPU load",
   "d3sound.options.diffraction": "Diffraction",
   "d3sound.options.reflections": "Reflections",
   "d3sound.options.reverb": "Room tail",
@@ -27,5 +27,17 @@
   "d3sound.conflicts.hint": "Red ones are best disabled: two engines on one sound give either doubled echo or silence. The rest keep working, their sounds just bypass our physics.",
   "d3sound.conflicts.scanning": "Scanning mods…",
   "d3sound.options.conflicts.checking": "Conflicting mods (scanning…)",
-  "d3sound.options.share": "Engine CPU limit"
+  "d3sound.options.share": "Max CPU for D3Sound",
+  "d3sound.options.share.tip": "How much of the whole machine the engine may use for itself, measured from real solve time over the interval between solves, divided by core count. When it hits the cap it lowers ray count and reflection depth on its own.",
+  "d3sound.options.headroom.tip": "A safety net for when the CPU is busy overall. While total load stays below this, the engine may grow; above it, it backs off even if it fits its own cap. Set 100 % to be limited only by the personal cap.",
+  "d3sound.options.enabled.tip": "Compute sound with D3Sound physics instead of the game's own processing.",
+  "d3sound.options.quality.tip": "Auto lets the engine pick rays, bounces and update rate within its CPU cap. A manual value pins quality and ignores the caps.",
+  "d3sound.options.gain.tip": "Overall level of everything D3Sound renders, on top of the game's own volume sliders.",
+  "d3sound.options.diffraction.tip": "Sound around corners and through doorways: shortest bypass path with Maekawa edge loss.",
+  "d3sound.options.reflections.tip": "Ray tracing over world geometry: early echo comes from the real wall, the tail comes from ray statistics. The most expensive part.",
+  "d3sound.options.structure.tip": "Sound travelling through the blocks themselves — how you hear neighbours through a wall. It is radiated by the wall next to you, so it sounds muffled and comes from the wall.",
+  "d3sound.options.structure_level.tip": "How loudly the structure carries sound. 100 % follows reference values per material.",
+  "d3sound.options.reverb.tip": "Level of the late tail. Auto derives it from the measured decay time of the space around you.",
+  "d3sound.options.doppler.tip": "Pitch shift from approach and retreat. 100 % is real, from the actual travel time of the wave.",
+  "d3sound.options.overlay.tip": "Show what the sound costs: sources, rays, quality, engine CPU share, solve time, decay time and mean free path."
 }

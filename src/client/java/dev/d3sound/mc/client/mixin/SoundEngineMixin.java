@@ -11,7 +11,6 @@ import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -28,12 +27,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class SoundEngineMixin {
 
 	@Shadow @Final private SoundManager soundManager;
-
-	@Invoker("calculateVolume")
-	protected abstract float d3sound$calculateVolume(SoundInstance instance);
-
-	@Invoker("calculatePitch")
-	protected abstract float d3sound$calculatePitch(SoundInstance instance);
 
 	@Inject(
 		method = "play(Lnet/minecraft/client/resources/sounds/SoundInstance;)Lnet/minecraft/client/sounds/SoundEngine$PlayResult;",
@@ -53,9 +46,10 @@ public abstract class SoundEngineMixin {
 			return;
 		}
 
-		float volume = d3sound$calculateVolume(instance);
+		SoundEngineAccessor accessor = (SoundEngineAccessor) (Object) this;
+		float volume = accessor.d3sound$calculateVolume(instance);
 		if (volume <= 0f) return;
-		float pitch = d3sound$calculatePitch(instance);
+		float pitch = accessor.d3sound$calculatePitch(instance);
 		boolean looping = instance.isLooping() && instance.getDelay() == 0;
 
 		SoundEngine self = (SoundEngine) (Object) this;

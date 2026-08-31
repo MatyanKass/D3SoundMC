@@ -28,6 +28,8 @@ public final class Bench {
 		room();
 		occlusion();
 		structure();
+		toggles();
+		budget();
 		mixer();
 
 		System.out.printf("%nПройдено %d, провалено %d%n", passed, failed);
@@ -136,6 +138,14 @@ public final class Bench {
 			String.format("%.2f против %.2f с", t2.rt60[2], tracer.rt60[2]));
 	}
 
+	private static double totalEnergy(Tracer tracer) {
+		double sum = tracer.lateEnergy(0);
+		for (int bin = 0; bin < Tracer.BINS; bin++) {
+			for (int b = 0; b < Materials.BAND_COUNT; b++) sum += tracer.energyAt(0, bin, b);
+		}
+		return sum;
+	}
+
 	private static boolean anyEarly(Tracer tracer) {
 		for (int bin = 0; bin < Tracer.BINS; bin++) {
 			for (int b = 0; b < Materials.BAND_COUNT; b++) {
@@ -215,6 +225,92 @@ public final class Bench {
 		}
 		expect("через шерсть тише, чем через камень", woolLevel < stoneLevel,
 			String.format("%.1f дБ разницы", 20 * Math.log10(Math.max(1e-12, woolLevel) / Math.max(1e-12, stoneLevel))));
+	}
+
+	/* --- переключатели в настройках должны и правда что-то менять --- */
+
+	private static void toggles() {
+		System.out.println();
+		System.out.println("== переключатели ==");
+		VoxelSnapshot world = box(16, 12, Materials.STONE);
+		int cx = (int) world.toLocalX(world.listenerX);
+		int cy = (int) world.toLocalY(world.listenerY);
+		int cz = (int) world.toLocalZ(world.listenerZ);
+		for (int y = cy - 4; y <= cy + 2; y++) {
+			for (int z = cz - 5; z <= cz + 5; z++) world.set(cx + 2, y, z, (byte) Materials.STONE.ordinal(), (byte) 100);
+		}
+
+		Solution all = solve(world, world.listenerX + 4, world.listenerY, world.listenerZ, false, true, true, true);
+		Solution noReflections = solve(world, world.listenerX + 4, world.listenerY, world.listenerZ, false, true, false, true);
+		Solution noDiffraction = solve(world, world.listenerX + 4, world.listenerY, world.listenerZ, false, false, true, true);
+		Solution noStructure = solve(world, world.listenerX + 4, world.listenerY, world.listenerZ, false, true, true, false);
+
+		expect("без отражений хвост пропадает", noReflections.tailLevel == 0f && all.tailLevel > 0f,
+			String.format("%.4f против %.4f", noReflections.tailLevel, all.tailLevel));
+		expect("без отражений отводов меньше", noReflections.tapCount < all.tapCount,
+			noReflections.tapCount + " против " + all.tapCount);
+		expect("без огибания преград кромка не считается", noDiffraction.diffractionDb == 0f && all.diffractionDb > 0f,
+			String.format("%.1f против %.1f дБ", noDiffraction.diffractionDb, all.diffractionDb));
+		expect("без огибания звук за преградой всё же слышен", energy(noDiffraction, 0) > 0, "есть отвод");
+		expect("без звука через блоки такого отвода нет", noStructure.structureTap < 0 && all.structureTap >= 0,
+			"отвод " + all.structureTap);
+	}
+
+	/* --- потолок процессора --- */
+
+	private static void budget() {
+		System.out.println();
+		System.out.println("== нагрузка ==");
+		Budget budget = new Budget();
+		budget.ownShareLimit = 0.40f;
+		budget.targetLoad = 1f;
+		budget.panicLoad = 1f;
+
+		float allowed = budget.allowedSolveMs();
+		expect("разрешённая длина прогона выведена из доли",
+			allowed > 4f && allowed <= budget.maxSolveMs,
+			String.format("%.1f мс при %d ядрах", allowed, budget.cores()));
+
+		for (int i = 0; i < 60; i++) budget.update(budget.allowedSolveMs() * 3f);
+		float heavy = budget.quality();
+		expect("перебор по процессору сбрасывает качество", heavy <= 0.2f,
+			String.format("качество %.2f, доля %.1f%%", heavy, budget.ownShare() * 100));
+
+		for (int i = 0; i < 200; i++) budget.update(0.2f);
+		expect("на свободной машине качество растёт", budget.quality() > heavy,
+			String.format("качество %.2f, доля %.1f%%", budget.quality(), budget.ownShare() * 100));
+
+		Budget tight = new Budget();
+		tight.ownShareLimit = 0.02f;
+		expect("маленький потолок — меньше потоков", tight.threads() < budget.threads() || budget.cores() < 4,
+			String.format("%d против %d", tight.threads(), budget.threads()));
+		expect("потоки не съедают все ядра", budget.threads() <= Math.max(1, budget.cores() - 1),
+			String.format("%d из %d ядер", budget.threads(), budget.cores()));
+
+		// куски лучей должны давать то же, что один проход
+		VoxelSnapshot world = box(16, 10, Materials.STONE);
+		double[] sx = {world.toLocalX(world.listenerX) + 3};
+		double[] sy = {world.toLocalY(world.listenerY)};
+		double[] sz = {world.toLocalZ(world.listenerZ)};
+		Tracer whole = new Tracer();
+		whole.trace(world, sx, sy, sz, 1, 1024, 10, 343f, 0.7f, 999L);
+
+		Tracer part = new Tracer();
+		Tracer other = new Tracer();
+		part.reset(1);
+		other.reset(1);
+		part.traceSlice(world, sx, sy, sz, 1, 0, 512, 1024, 10, 343f, 0.7f, 999L);
+		other.traceSlice(world, sx, sy, sz, 1, 512, 1024, 1024, 10, 343f, 0.7f, 999L);
+		part.mergeFrom(other, 1);
+		part.finish(343f);
+
+		double one = totalEnergy(whole), split = totalEnergy(part);
+		expect("расчёт кусками даёт то же, что целиком",
+			Math.abs(one - split) < one * 0.35 + 1e-9,
+			String.format("%.4g против %.4g", one, split));
+		expect("время затухания при делении на куски то же",
+			Math.abs(whole.rt60[2] - part.rt60[2]) < whole.rt60[2] * 0.25f,
+			String.format("%.2f против %.2f с", whole.rt60[2], part.rt60[2]));
 	}
 
 	/* --- микшер: нет ли NaN и адекватен ли уровень --- */
@@ -304,8 +400,16 @@ public final class Bench {
 	}
 
 	private static Solution solve(VoxelSnapshot world, double sxw, double syw, double szw, boolean impact) {
+		return solve(world, sxw, syw, szw, impact, true, true, true);
+	}
+
+	private static Solution solve(VoxelSnapshot world, double sxw, double syw, double szw, boolean impact,
+	                              boolean diffraction, boolean reflections, boolean structure) {
 		Budget budget = new Budget();
 		budget.manualQuality = 0.5f;
+		budget.diffraction = diffraction;
+		budget.reflections = reflections;
+		budget.structure = structure;
 		budget.update(1f);
 		Solver solver = new Solver(budget, world.size);
 		final double[] pos = {sxw, syw, szw};

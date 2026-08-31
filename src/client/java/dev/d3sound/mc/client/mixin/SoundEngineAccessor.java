@@ -1,10 +1,12 @@
 package dev.d3sound.mc.client.mixin;
 
+import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundBufferLibrary;
 import net.minecraft.client.sounds.SoundEngine;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
+import org.spongepowered.asm.mixin.gen.Invoker;
 
 /**
  * Внутренности звукового движка игры, которые нужны нашему:
@@ -21,4 +23,11 @@ public interface SoundEngineAccessor {
 
 	@Accessor("loaded")
 	boolean d3sound$loaded();
+
+	/** Громкость звука с учётом всех ползунков игры — она меняется на ходу. */
+	@Invoker("calculateVolume")
+	float d3sound$calculateVolume(SoundInstance instance);
+
+	@Invoker("calculatePitch")
+	float d3sound$calculatePitch(SoundInstance instance);
 }

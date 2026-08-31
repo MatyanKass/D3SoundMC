@@ -67,9 +67,10 @@ public final class Budget {
 	public void update(float solveMs) {
 		solveAvg += (solveMs - solveAvg) * 0.3f;
 
-		// сколько процессора съели мы сами: занятая доля ядра, делённая на ядра
+		// сколько процессора съели мы сами: занятая доля ядра, помноженная на
+		// число рабочих потоков и делённая на все ядра машины
 		float duty = solveAvg / Math.max(1f, intervalMs());
-		shareAvg += (Math.min(1f, duty) / cores - shareAvg) * 0.3f;
+		shareAvg += (Math.min(1f, duty) * threads() / cores - shareAvg) * 0.3f;
 
 		if (manualQuality >= 0) {
 			quality = Math.max(0.05f, Math.min(1f, manualQuality));
@@ -117,8 +118,21 @@ public final class Budget {
 	 * ядер, получаем, сколько миллисекунд нам позволено.
 	 */
 	public float allowedSolveMs() {
-		float byShare = ownShareLimit * cores * intervalMs();
+		float byShare = ownShareLimit * cores * intervalMs() / threads();
 		return Math.max(4f, Math.min(maxSolveMs, byShare));
+	}
+
+	/**
+	 * Во сколько потоков считать лучи.
+	 *
+	 * Один поток может занять не больше одного ядра, то есть 1/N машины: на
+	 * двенадцатиядерном это 8 %, и никакой потолок выше просто не достижим.
+	 * Поэтому число потоков берём из отведённой доли — столько ядер нам и
+	 * разрешено занять, — оставляя как минимум одно ядро самой игре.
+	 */
+	public int threads() {
+		int wanted = Math.round(ownShareLimit * cores);
+		return Math.max(1, Math.min(Math.max(1, cores - 1), wanted));
 	}
 
 	/* --- во что превращается качество --- */
@@ -144,6 +158,7 @@ public final class Budget {
 	public String describe() {
 		return String.format("качество %d%%%s · движок ест %.1f%% ЦП из %.0f%% · система %d%% · прогон %.1f мс · лучей %d",
 			Math.round(quality * 100), manualQuality >= 0 ? "" : " (авто)",
-			shareAvg * 100, ownShareLimit * 100, Math.round(loadAvg * 100), solveAvg, rays());
+			shareAvg * 100, ownShareLimit * 100, Math.round(loadAvg * 100), solveAvg, rays())
+			+ String.format(" · потоков %d", threads());
 	}
 }

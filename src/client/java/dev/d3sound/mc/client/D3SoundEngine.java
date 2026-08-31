@@ -381,9 +381,25 @@ public final class D3SoundEngine {
 			Source source = entry.getValue();
 			if (source.finished) { playing.remove(instance); solver.forget(source.id); continue; }
 
+			// звук, который сам себя остановил (мобы, вагонетки, маяк), игра нам
+			// уже не отдаст — снимаем его здесь
+			if (instance instanceof net.minecraft.client.resources.sounds.TickableSoundInstance tickable
+				&& tickable.isStopped()) {
+				stop(instance);
+				continue;
+			}
+
 			source.x = instance.getX();
 			source.y = instance.getY();
 			source.z = instance.getZ();
+			// громкость и высота живут своей жизнью: ползунки игры, затухание
+			// музыки, разгон вагонетки — всё это меняется уже после запуска
+			if (soundEngine != null) {
+				SoundEngineAccessor accessor = (SoundEngineAccessor) soundEngine;
+				float live = accessor.d3sound$calculateVolume(instance);
+				if (live > 0) source.volume = live; else source.stopping = true;
+				source.pitch = accessor.d3sound$calculatePitch(instance);
+			}
 
 			// звук, пересекающий поверхность воды, теряет почти всё, кроме низа
 			boolean sourceUnderwater = level.getFluidState(

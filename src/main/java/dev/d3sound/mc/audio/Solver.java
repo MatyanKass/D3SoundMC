@@ -36,6 +36,8 @@ public final class Solver {
 	private final Paths paths;
 	private final Structure structure;
 	private final Tracer tracer = new Tracer();
+	private Tracer[] helpers = new Tracer[0];
+	private java.util.concurrent.ExecutorService pool;
 	private final Map<Long, Solution> solutions = new ConcurrentHashMap<>();
 	private final AtomicReference<Job> pending = new AtomicReference<>();
 	private final float[] bandBuffer = new float[Materials.BAND_COUNT];
@@ -84,6 +86,7 @@ public final class Solver {
 		running = false;
 		if (thread != null) thread.interrupt();
 		thread = null;
+		if (pool != null) { pool.shutdownNow(); pool = null; }
 		solutions.clear();
 	}
 
@@ -148,10 +151,9 @@ public final class Solver {
 			structure.build(world, world.listenerX, world.listenerY, world.listenerZ, MAX_STRUCTURE_LOSS_DB);
 		}
 
-		// 3. отражения
+		// 3. отражения — лучи делятся между потоками по отведённой доле процессора
 		if (reflections) {
-			tracer.trace(world, sxLocal, syLocal, szLocal, count,
-				budget.rays(), budget.bounces(), c, RECEIVER_RADIUS, System.nanoTime());
+			traceRays(world, count, c);
 			rt60 = tracer.rt60.clone();
 			meanFreePath = tracer.meanFreePath;
 		}
@@ -203,6 +205,76 @@ public final class Solver {
 	/** Геометрическое расхождение по амплитуде. */
 	public static float spread(float distance) {
 		return REFERENCE_DISTANCE / Math.max(REFERENCE_DISTANCE, distance);
+	}
+
+	/**
+	 * Пустить лучи, разделив их между потоками.
+	 *
+	 * Направления берутся из общей спирали по номеру луча, поэтому какой кусок
+	 * кто посчитал — неважно: вместе они дают ровно то же покрытие сферы, что
+	 * и один проход, только за меньшее время.
+	 */
+	private void traceRays(VoxelSnapshot world, int count, float c) {
+		int rays = budget.rays();
+		int bounces = budget.bounces();
+		int threads = Math.max(1, Math.min(budget.threads(), rays / 32));
+		long seed = System.nanoTime();
+
+		if (threads <= 1) {
+			tracer.trace(world, sxLocal, syLocal, szLocal, count, rays, bounces, c, RECEIVER_RADIUS, seed);
+			return;
+		}
+
+		ensureHelpers(threads - 1);
+		tracer.reset(count);
+		int per = rays / threads;
+
+		java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(threads - 1);
+		for (int t = 1; t < threads; t++) {
+			final Tracer helper = helpers[t - 1];
+			final int from = t * per;
+			final int to = t == threads - 1 ? rays : (t + 1) * per;
+			final long slice = seed + t * 0x9E3779B9L;
+			helper.reset(count);
+			pool.execute(() -> {
+				try {
+					helper.traceSlice(world, sxLocal, syLocal, szLocal, count, from, to, rays,
+						bounces, c, RECEIVER_RADIUS, slice);
+				} catch (Throwable error) {
+					System.err.println("D3Sound: сбой в потоке лучей: " + error);
+				} finally {
+					done.countDown();
+				}
+			});
+		}
+
+		tracer.traceSlice(world, sxLocal, syLocal, szLocal, count, 0, per, rays,
+			bounces, c, RECEIVER_RADIUS, seed);
+
+		try {
+			done.await();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+		}
+		for (int t = 1; t < threads; t++) tracer.mergeFrom(helpers[t - 1], count);
+		tracer.finish(c);
+	}
+
+	private void ensureHelpers(int needed) {
+		if (helpers.length < needed) {
+			Tracer[] grown = new Tracer[needed];
+			System.arraycopy(helpers, 0, grown, 0, helpers.length);
+			for (int i = helpers.length; i < needed; i++) grown[i] = new Tracer();
+			helpers = grown;
+		}
+		if (pool == null) {
+			pool = java.util.concurrent.Executors.newCachedThreadPool(r -> {
+				Thread thread = new Thread(r, "D3Sound-rays");
+				thread.setDaemon(true);
+				thread.setPriority(Thread.NORM_PRIORITY - 1);
+				return thread;
+			});
+		}
 	}
 
 	/** Прямая видимость источника из точки слушателя. */
