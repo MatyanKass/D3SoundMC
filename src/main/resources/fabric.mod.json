@@ -3,12 +3,13 @@
 	"id": "d3sound",
 	"version": "${version}",
 	"name": "D3Sound",
-	"description": "Переписанный звук: честная физика распространения, бинауральная локализация, отражения и реверберация из геометрии мира.",
+	"description": "Physically modelled sound for Minecraft: real propagation through world geometry, binaural localisation, diffraction, transmission through walls, structure-borne sound and reverberation measured from the room itself.",
 	"authors": ["MatyanKass"],
 	"contact": {
-		"sources": "https://github.com/MatyanKass/D3SoundMC"
+		"sources": "https://github.com/MatyanKass/D3SoundMC",
+		"issues": "https://github.com/MatyanKass/D3SoundMC/issues"
 	},
-	"license": "All rights reserved",
+	"license": "MIT",
 	"environment": "client",
 	"entrypoints": {
 		"client": [
