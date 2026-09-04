@@ -42,6 +42,18 @@ public final class Source {
 	public final String name;
 	public final float[] pcm;
 	public final int sampleRate;
+	/**
+	 * Длинный звук, который подкачивается на ходу: пластинка, музыка, долгий
+	 * фон. Буфер кольцевой — держим только последние секунды, поэтому играть
+	 * можно хоть часами, а памяти уходит столько же, сколько на короткий звук.
+	 */
+	public final boolean streaming;
+	/** Сколько семплов уже подано всего; для обычного звука — его длина. */
+	private volatile long written;
+	/** Больше семплов не будет: поток кончился. */
+	private volatile boolean complete = true;
+	/** Сколько подряд не хватало данных, семплов. */
+	private long starved;
 	public final boolean loop;
 	public final boolean relative;
 	public final long id;
@@ -68,10 +80,59 @@ public final class Source {
 		this.sampleRate = sampleRate;
 		this.loop = loop;
 		this.relative = relative;
+		this.streaming = false;
+		this.written = pcm.length;
 		for (int i = 0; i < MAX_TAPS; i++) taps[i] = new Tap();
 	}
 
-	public double lengthSeconds() { return (double) pcm.length / sampleRate; }
+	/**
+	 * Источник, которому семплы подаются порциями.
+	 *
+	 * Повтор здесь не наш: длинный звук повторяет сам поток, поэтому
+	 * {@code loop} у такого источника всегда выключен.
+	 *
+	 * @param bufferSeconds насколько назад можно читать — этого должно хватать
+	 *                      на самое долгое эхо плюс запас на подкачку
+	 */
+	public static Source streaming(long id, String name, int sampleRate, boolean relative, float bufferSeconds) {
+		int capacity = Math.max(1024, Math.round(sampleRate * bufferSeconds));
+		return new Source(id, name, new float[capacity], sampleRate, relative);
+	}
+
+	private Source(long id, String name, float[] ring, int sampleRate, boolean relative) {
+		this.id = id;
+		this.name = name;
+		this.pcm = ring;
+		this.sampleRate = sampleRate;
+		this.loop = false;
+		this.relative = relative;
+		this.streaming = true;
+		this.written = 0;
+		this.complete = false;
+		for (int i = 0; i < MAX_TAPS; i++) taps[i] = new Tap();
+	}
+
+	/** Сколько семплов уже проиграно — по этому видно, пора ли подкачивать. */
+	public long played() { return (long) cursor; }
+
+	public long written() { return written; }
+
+	/** Добавить порцию в кольцо. Вызывается из потока подкачки. */
+	public void append(float[] chunk, int count) {
+		if (!streaming || count <= 0) return;
+		int capacity = pcm.length;
+		int at = (int) (written % capacity);
+		for (int i = 0; i < count; i++) {
+			pcm[at] = chunk[i];
+			if (++at == capacity) at = 0;
+		}
+		written += count;
+	}
+
+	/** Поток кончился: доигрываем то, что есть, и заканчиваем. */
+	public void markComplete() { complete = true; }
+
+	public double lengthSeconds() { return (double) written / sampleRate; }
 
 	/**
 	 * Смешать порцию.
@@ -126,7 +187,22 @@ public final class Source {
 			}
 
 			cursor += rate;
-			if (cursor >= pcm.length) {
+			if (streaming) {
+				if (cursor >= written) {
+					// данных ещё нет: лучше подождать, чем проглотить кусок
+					if (!complete) {
+						cursor -= rate;
+						starved += 1;
+						// поток молчит слишком долго — значит, его уже нет
+						if (starved > outRate * 5L) { finished = true; return; }
+					} else if (cursor > written + sampleRate * 0.6) {
+						finished = true;
+						return;
+					}
+				} else {
+					starved = 0;
+				}
+			} else if (cursor >= pcm.length) {
 				if (loop) cursor -= pcm.length;
 				else if (cursor > pcm.length + sampleRate * 0.6) { finished = true; return; }
 			}
@@ -137,6 +213,7 @@ public final class Source {
 	/** Чтение с дробной позицией; до прихода звука в этой точке тишина. */
 	private float sample(double index) {
 		if (index < 0) return 0f;
+		if (streaming) return ring(index);
 		if (index >= pcm.length - 1) {
 			if (!loop) return 0f;
 			index = index % pcm.length;
@@ -145,5 +222,24 @@ public final class Source {
 		float frac = (float) (index - i0);
 		int i1 = i0 + 1 < pcm.length ? i0 + 1 : (loop ? 0 : i0);
 		return pcm[i0] + (pcm[i1] - pcm[i0]) * frac;
+	}
+
+	/**
+	 * Чтение из кольца по сквозному номеру семпла.
+	 *
+	 * Наружу кольцо выглядит как обычная лента: номер растёт без конца, а
+	 * хранится только последний кусок. Всё, что старше кольца или ещё не
+	 * пришло, читается как тишина.
+	 */
+	private float ring(double index) {
+		long total = written;
+		int capacity = pcm.length;
+		if (index >= total - 1) return 0f;
+		if (index < total - capacity + 1) return 0f;
+		long i0 = (long) index;
+		float frac = (float) (index - i0);
+		int a = (int) Math.floorMod(i0, capacity);
+		int b = a + 1 == capacity ? 0 : a + 1;
+		return pcm[a] + (pcm[b] - pcm[a]) * frac;
 	}
 }

@@ -32,6 +32,7 @@ public final class Bench {
 		throughWall();
 		toggles();
 		budget();
+		streaming();
 		mixer();
 
 		System.out.printf("%nПройдено %d, провалено %d%n", passed, failed);
@@ -567,6 +568,67 @@ public final class Bench {
 		expect("время затухания при делении на куски то же",
 			Math.abs(whole.rt60[2] - part.rt60[2]) < whole.rt60[2] * 0.25f,
 			String.format("%.2f против %.2f с", whole.rt60[2], part.rt60[2]));
+	}
+
+	/* --- длинный звук, который подаётся порциями --- */
+
+	private static void streaming() {
+		System.out.println();
+		System.out.println("== потоковый звук ==");
+
+		int rate = 48000;
+		// кольца на 0.25 с хватает, чтобы проверить оборот несколько раз
+		Source source = Source.streaming(1L, "record", rate, false, 0.25f);
+		Source.Tap tap = source.taps[0];
+		for (int i = 0; i < 3; i++) { tap.targetGainLeft[i] = 1f / 3; tap.targetGainRight[i] = 1f / 3; }
+		tap.active = true;
+		source.tapCount = 1;
+
+		expect("сначала данных нет", source.written() == 0, source.written() + " семплов");
+
+
+		float[] l = new float[512], r = new float[512], bus = new float[512];
+
+		// подаём ровную единицу порциями и сводим — курсор не должен убегать вперёд данных
+		float[] chunk = new float[1024];
+		java.util.Arrays.fill(chunk, 1f);
+		double loudest = 0;
+		int fed = 0;
+        for (int block = 0; block < 60; block++) {
+			if (source.written() - source.played() < 4096) { source.append(chunk, chunk.length); fed++; }
+			java.util.Arrays.fill(l, 0f); java.util.Arrays.fill(r, 0f);
+			source.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f);
+			for (int i = 0; i < 512; i++) loudest = Math.max(loudest, Math.abs(l[i]));
+		}
+		System.out.printf("  подано %d порций, всего %d семплов, проиграно %d%n",
+			fed, source.written(), source.played());
+		expect("курсор не обгоняет поданные данные", source.played() <= source.written(),
+			source.played() + " из " + source.written());
+		expect("звук из кольца доходит до выхода", loudest > 0.2,
+			String.format("пик %.3f", loudest));
+		expect("память не растёт вместе со звуком", source.pcm.length == rate / 4,
+			source.pcm.length + " семплов в кольце при " + source.written() + " поданных");
+		expect("источник ещё играет", !source.finished, "жив");
+
+		// поток кончился — источник должен доиграть остаток и закрыться
+		source.markComplete();
+		boolean ended = false;
+		for (int block = 0; block < 400 && !ended; block++) {
+			source.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f);
+			ended = source.finished;
+		}
+		expect("после конца потока источник закрывается", ended, "закрылся");
+
+		// молчащий поток не должен висеть вечно
+		Source stuck = Source.streaming(2L, "stuck", rate, false, 0.25f);
+		stuck.taps[0].active = true;
+		stuck.tapCount = 1;
+		boolean dropped = false;
+		for (int block = 0; block < 2000 && !dropped; block++) {
+			stuck.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f);
+			dropped = stuck.finished;
+		}
+		expect("зависший поток не живёт вечно", dropped, "снят");
 	}
 
 	/* --- микшер: нет ли NaN и адекватен ли уровень --- */

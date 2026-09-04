@@ -5,6 +5,20 @@
 Version format: `1.6.1` — the second digit changes on noticeable engine work,
 the third on small fixes.
 
+## V-1.7.0 — 4 September 2026
+
+* **Streamed sounds went through vanilla, bypassing all physics.** Anything the
+  game streams — music discs in a jukebox, long ambient loops — was handed back
+  to the vanilla engine untouched, and vanilla has no occlusion at all. A
+  jukebox behind a stone wall sounded as if the wall were not there. This is why
+  testing with a record kept showing sound coming through blocks: those sounds
+  never reached the engine (the on-screen counter showed a 0.0 ms solve, meaning
+  no sources at all).
+* Streamed sounds are now captured too, and fed to the mixer in chunks through a
+  ring buffer: playback starts immediately and memory stays flat no matter how
+  long the track is — a six-minute record costs the same as a footstep. If the
+  stream stalls or dies, the source is dropped instead of hanging forever.
+
 ## V-1.6.1 — 4 September 2026
 
 * The active preset button is no longer greyed out. It read as a fault: the

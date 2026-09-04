@@ -15,6 +15,7 @@ import dev.d3sound.mc.client.mixin.SoundBufferAccessor;
 import dev.d3sound.mc.client.mixin.SoundEngineAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.sounds.SoundInstance;
+import net.minecraft.client.sounds.AudioStream;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.core.BlockPos;
@@ -37,6 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -107,7 +109,6 @@ public final class D3SoundEngine {
 	                        net.minecraft.client.resources.sounds.Sound sound,
 	                        float volume, float pitch, boolean looping) {
 		if (!enabled) return false;
-		if (sound.shouldStream()) return false;
 		if (instance.isRelative()) return false;
 		if (instance.getAttenuation() == SoundInstance.Attenuation.NONE) return false;
 		if (playing.size() >= Tracer.MAX_SOURCES) return false;
@@ -116,6 +117,12 @@ public final class D3SoundEngine {
 		solver.start();
 
 		Identifier path = sound.getPath();
+		if (sound.shouldStream()) {
+			// длинный звук целиком в память не берём: подаём его порциями
+			startStreaming(engine, instance, path, volume, pitch, looping);
+			return true;
+		}
+
 		Pcm cached = pcmCache.get(path);
 		if (cached != null) {
 			start(instance, cached, volume, pitch, looping);
@@ -176,6 +183,119 @@ public final class D3SoundEngine {
 	public void stopAll() {
 		for (Source s : playing.values()) { s.stopping = true; solver.forget(s.id); }
 		playing.clear();
+	}
+
+	/** Сколько звука держим позади курсора: хватает на любое эхо и на подкачку. */
+	private static final float STREAM_BUFFER_SECONDS = 2.5f;
+	/** Насколько стараемся идти впереди воспроизведения. */
+	private static final float STREAM_AHEAD_SECONDS = 1.0f;
+
+	private ExecutorService streamPump;
+
+	/**
+	 * Длинный звук — пластинка, музыка, долгий фон.
+	 *
+	 * Раньше такие звуки отдавались ванильному движку целиком, и это была дыра:
+	 * проигрыватель за стеной было слышно так, будто стены нет, — ведь у игры
+	 * никакой физики распространения нет. Теперь и они идут через нас.
+	 *
+	 * Целиком в память класть их нельзя: пластинка это десятки мегабайт, да и
+	 * ждать её распаковки пришлось бы секунду. Поэтому звук читается из потока
+	 * порциями в кольцевой буфер источника — играть начинает сразу, а памяти
+	 * уходит столько же, сколько на короткий звук.
+	 */
+	private void startStreaming(SoundEngine engine, SoundInstance instance, Identifier path,
+	                            float volume, float pitch, boolean looping) {
+		SoundEngineAccessor accessor = (SoundEngineAccessor) engine;
+		// повтор берёт на себя сам поток: он просто не кончается
+		accessor.d3sound$soundBuffers().getStream(path, looping).thenAccept(stream -> {
+			AudioFormat format = stream.getFormat();
+			int rate = (int) format.getSampleRate();
+			Source source = Source.streaming(nextId.getAndIncrement(), instance.getIdentifier().toString(),
+				rate, instance.isRelative(), STREAM_BUFFER_SECONDS);
+			source.x = instance.getX();
+			source.y = instance.getY();
+			source.z = instance.getZ();
+			source.volume = volume;
+			source.pitch = pitch;
+			source.impact = false;
+			applyFallback(source);
+			playing.put(instance, source);
+			mixer.add(source);
+			if (verbose) LOG.info("D3Sound: поток {} на ({}, {}, {})", source.name,
+				(int) source.x, (int) source.y, (int) source.z);
+			pumpStream(stream, source, format);
+		}).exceptionally(error -> {
+			LOG.warn("D3Sound: поток {} не открылся: {}", path, error.toString());
+			return null;
+		});
+	}
+
+	/** Качать порции, пока источник жив и поток не кончился. */
+	private void pumpStream(AudioStream stream, Source source, AudioFormat format) {
+		if (streamPump == null) {
+			streamPump = Executors.newCachedThreadPool(r -> {
+				Thread thread = new Thread(r, "D3Sound-stream");
+				thread.setDaemon(true);
+				thread.setPriority(Thread.NORM_PRIORITY - 1);
+				return thread;
+			});
+		}
+		final int rate = (int) format.getSampleRate();
+		final int channels = format.getChannels();
+		final int bytesPerFrame = channels * format.getSampleSizeInBits() / 8;
+		final long ahead = Math.round(rate * STREAM_AHEAD_SECONDS);
+		final int chunkBytes = Math.max(bytesPerFrame, Math.round(rate * 0.1f) * bytesPerFrame);
+
+		streamPump.execute(() -> {
+			float[] scratch = new float[Math.round(rate * 0.1f) + 16];
+			try (AudioStream open = stream) {
+				while (!source.finished && !source.stopping) {
+					if (source.written() - source.played() > ahead) {
+						Thread.sleep(20);
+						continue;
+					}
+					ByteBuffer data = open.read(chunkBytes);
+					if (data == null || !data.hasRemaining()) { source.markComplete(); return; }
+					int frames = toMono(data, format, scratch);
+					if (frames <= 0) { source.markComplete(); return; }
+					source.append(scratch, frames);
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+			} catch (Throwable error) {
+				LOG.warn("D3Sound: поток {} оборвался: {}", source.name, error.toString());
+			} finally {
+				source.markComplete();
+			}
+		});
+	}
+
+	/** Порция из потока игры в моно-семплы нашего микшера. */
+	private static int toMono(ByteBuffer data, AudioFormat format, float[] out) {
+		int channels = format.getChannels();
+		int bits = format.getSampleSizeInBits();
+		ByteBuffer view = data.duplicate().order(format.isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN);
+		if (bits == 16) {
+			ShortBuffer shorts = view.asShortBuffer();
+			int frames = Math.min(out.length, shorts.remaining() / channels);
+			for (int i = 0; i < frames; i++) {
+				float sum = 0;
+				for (int c = 0; c < channels; c++) sum += shorts.get(i * channels + c) / 32768f;
+				out[i] = sum / channels;
+			}
+			return frames;
+		}
+		if (bits == 8) {
+			int frames = Math.min(out.length, view.remaining() / channels);
+			for (int i = 0; i < frames; i++) {
+				float sum = 0;
+				for (int c = 0; c < channels; c++) sum += ((view.get(i * channels + c) & 0xFF) - 128) / 128f;
+				out[i] = sum / channels;
+			}
+			return frames;
+		}
+		return 0;
 	}
 
 	private static Pcm decode(com.mojang.blaze3d.audio.SoundBuffer buffer) {
@@ -571,6 +691,7 @@ public final class D3SoundEngine {
 		stopAll();
 		solver.stop();
 		if (pump != null) { pump.shutdownNow(); pump = null; }
+		if (streamPump != null) { streamPump.shutdownNow(); streamPump = null; }
 		output = null;
 		pcmCache.clear();
 	}
