@@ -36,6 +36,14 @@ public final class D3Config {
 	public boolean structure = true;
 	/** Уровень структурного звука, %. */
 	public int structureLevel = 100;
+	/** Звук, прошедший преграду насквозь: за стеной глухой бубнёж. */
+	public boolean transmission = true;
+	/** Уровень прошедшего сквозь преграду звука, %. */
+	public int transmissionLevel = 100;
+	/** Дальность расчёта, блоков. 0 — Авто по качеству. */
+	public int range = 0;
+	/** Период пересчёта, мс. 0 — Авто по качеству. */
+	public int updateMs = 0;
 	/** Уровень хвоста реверберации, %. 0 — Авто по времени затухания помещения. */
 	public int reverb = 0;
 	/** Сила эффекта Доплера, %. 100 — как в жизни. */

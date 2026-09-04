@@ -45,6 +45,19 @@ public final class Budget {
 	public volatile boolean structure = true;
 	/** Множитель уровня структурного звука. */
 	public volatile float structureGain = 1f;
+	/** Считать ли звук, прошедший преграду насквозь. */
+	public volatile boolean transmission = true;
+	/** Множитель уровня прошедшего сквозь преграду звука. */
+	public volatile float transmissionGain = 1f;
+	/**
+	 * Дальность расчёта, блоков; 0 — подбирать по качеству.
+	 *
+	 * Радиус снимка мира — самая дорогая настройка после лучей: объём растёт
+	 * кубом, и вдвое больший радиус это восьмикратный снимок.
+	 */
+	public volatile int manualRadius = 0;
+	/** Период пересчёта, мс; 0 — подбирать по качеству. */
+	public volatile int manualIntervalMs = 0;
 
 	/** Текущее качество 0…1. */
 	private float quality = 0.35f;
@@ -145,10 +158,16 @@ public final class Budget {
 	public int taps() { return Math.round(lerp(2, Solution.MAX_TAPS, quality)); }
 
 	/** Период пересчёта, мс. */
-	public int intervalMs() { return Math.round(lerp(260, 70, quality)); }
+	public int intervalMs() {
+		if (manualIntervalMs > 0) return Math.max(20, Math.min(500, manualIntervalMs));
+		return Math.round(lerp(260, 70, quality));
+	}
 
 	/** Радиус снимка мира, блоков. */
-	public int radius() { return Math.round(lerp(14, 32, quality)); }
+	public int radius() {
+		if (manualRadius > 0) return Math.max(8, Math.min(64, manualRadius));
+		return Math.round(lerp(14, 32, quality));
+	}
 
 	private static float lerp(float a, float b, float t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
 

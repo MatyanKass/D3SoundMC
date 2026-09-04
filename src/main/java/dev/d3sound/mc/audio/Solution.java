@@ -21,12 +21,20 @@ public final class Solution {
 	/** Какой отвод пришёл по конструкции, а не по воздуху; −1, если такого нет. */
 	public int structureTap = -1;
 
+	/** Отвод «сквозь стену»: звук, прошедший преграду насквозь. -1, если такого нет. */
+	public int transmissionTap = -1;
+
+	/** Суммарная звукоизоляция преграды на пути, дБ (среднее по полосам). */
+	public float transmissionDb;
+
 	public void reset() {
 		tapCount = 0;
 		tailLevel = 0;
 		directBlocked = false;
 		diffractionDb = 0;
 		structureTap = -1;
+		transmissionTap = -1;
+		transmissionDb = 0;
 	}
 
 	public int addTap(float delaySeconds, float[] bandGains, float dx, float dy, float dz) {
@@ -46,6 +54,8 @@ public final class Solution {
 		directBlocked = other.directBlocked;
 		diffractionDb = other.diffractionDb;
 		structureTap = other.structureTap;
+		transmissionTap = other.transmissionTap;
+		transmissionDb = other.transmissionDb;
 		for (int i = 0; i < tapCount; i++) {
 			delay[i] = other.delay[i];
 			System.arraycopy(other.bands[i], 0, bands[i], 0, Materials.BAND_COUNT);

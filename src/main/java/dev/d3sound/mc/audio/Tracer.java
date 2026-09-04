@@ -182,9 +182,14 @@ public final class Tracer {
 				travelTime += hitDistance / speedOfSound;
 				if (total < 1e-7f) break;
 
-				// сбор энергии в источники
+				// сбор энергии в источники.
+				// Точка отскока лежит ровно на грани блока, и floor() от неё
+				// запросто попадает внутрь самой стены — поэтому отходим от
+				// поверхности вдоль нормали, иначе проверка видимости стартует
+				// изнутри преграды и стена в один блок становится прозрачной.
+				final double ex = px + nx * 1e-3, ey = py + ny * 1e-3, ez = pz + nz * 1e-3;
 				for (int s = 0; s < sourceCount; s++) {
-					double vx = sx[s] - px, vy = sy[s] - py, vz = sz[s] - pz;
+					double vx = sx[s] - ex, vy = sy[s] - ey, vz = sz[s] - ez;
 					double d2 = vx * vx + vy * vy + vz * vz;
 					if (d2 < 0.01) continue;
 					double d = Math.sqrt(d2);
@@ -192,7 +197,7 @@ public final class Tracer {
 					if (arrival > window * 4) continue;
 					float rough = (float) (total * receiverArea / d2);
 					if (rough < 1e-8f) continue;
-					if (blocked(world, px, py, pz, sx[s], sy[s], sz[s])) continue;
+					if (blocked(world, ex, ey, ez, sx[s], sy[s], sz[s])) continue;
 
 					float inv = (float) (1 / d);
 					float cosN = Math.abs((float) (vx * inv * nx + vy * inv * ny + vz * inv * nz));
@@ -334,6 +339,16 @@ public final class Tracer {
 		double tMaxX = (stepX > 0 ? (x + 1 - ox) : (ox - x)) * tDeltaX;
 		double tMaxY = (stepY > 0 ? (y + 1 - oy) : (oy - y)) * tDeltaY;
 		double tMaxZ = (stepZ > 0 ? (z + 1 - oz) : (oz - z)) * tDeltaZ;
+
+		// клетка, из которой луч вышел, тоже может быть непустой: если этого не
+		// заметить, шаг сетки перепрыгнет её и преграда в один блок пропадёт
+		if (world.inside(x, y, z) && world.local(x, y, z) != VoxelSnapshot.AIR
+			&& nextFloat() <= world.fill(x, y, z)) {
+			ray.material = Materials.values()[world.local(x, y, z)];
+			ray.distance = 0f;
+			ray.nx = -dx; ray.ny = -dy; ray.nz = -dz;
+			return ray;
+		}
 
 		double travelled = 0;
 		for (int guard = 0; guard < 256 && travelled < maxDistance; guard++) {

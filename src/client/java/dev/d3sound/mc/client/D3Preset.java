@@ -13,22 +13,22 @@ public enum D3Preset {
 	 * Вся физика и много процессора: столько лучей и отражений, сколько машина
 	 * даст. Ближе всего к тому, как звук ведёт себя на самом деле.
 	 */
-	REALISTIC_HIGH("realistic_high", 0, 60, 90, true, true, true, 100, 0, 100),
+	REALISTIC_HIGH("realistic_high", 0, 60, 90, true, true, true, 100, 0, 100, true, 100, 0, 0),
 
 	/**
 	 * Та же физика, но в вдвое меньший процессор: все механизмы на месте,
 	 * просто лучей меньше и картина грубее.
 	 */
-	REALISTIC_LOW("realistic_low", 0, 18, 60, true, true, true, 100, 0, 100),
+	REALISTIC_LOW("realistic_low", 0, 18, 60, true, true, true, 100, 0, 100, true, 100, 0, 0),
 
 	/** Значения по умолчанию: всё включено, процессора берётся умеренно. */
-	BALANCED("balanced", 0, 40, 70, true, true, true, 100, 0, 100),
+	BALANCED("balanced", 0, 40, 70, true, true, true, 100, 0, 100, true, 100, 0, 0),
 
 	/**
 	 * Самое дешёвое, что ещё не ванильный звук: остаются направление, расстояние
 	 * и глухота за преградой, отражения и звук по блокам выключены.
 	 */
-	PERFORMANCE("performance", 20, 8, 50, true, false, false, 100, 0, 100),
+	PERFORMANCE("performance", 20, 8, 50, true, false, false, 100, 0, 100, true, 100, 12, 220),
 
 	/**
 	 * Красиво, а не точно.
@@ -37,7 +37,7 @@ public enum D3Preset {
 	 * подчёркнут. Физически это уже неправда, зато звучит объёмнее большинства
 	 * игровых движков.
 	 */
-	CINEMATIC("cinematic", 0, 50, 85, true, true, true, 60, 130, 115);
+	CINEMATIC("cinematic", 0, 50, 85, true, true, true, 60, 130, 115, true, 60, 0, 0);
 
 	/** Ключ перевода: {@code d3sound.preset.<key>} и {@code …<key>.tip}. */
 	public final String key;
@@ -50,10 +50,16 @@ public enum D3Preset {
 	public final int structureLevel;
 	public final int reverb;
 	public final int doppler;
+	public final boolean transmission;
+	public final int transmissionLevel;
+	/** 0 — пусть движок сам подбирает по качеству. */
+	public final int range;
+	public final int updateMs;
 
 	D3Preset(String key, int quality, int cpuShare, int cpuHeadroom,
 	         boolean diffraction, boolean reflections, boolean structure,
-	         int structureLevel, int reverb, int doppler) {
+	         int structureLevel, int reverb, int doppler,
+	         boolean transmission, int transmissionLevel, int range, int updateMs) {
 		this.key = key;
 		this.quality = quality;
 		this.cpuShare = cpuShare;
@@ -64,6 +70,10 @@ public enum D3Preset {
 		this.structureLevel = structureLevel;
 		this.reverb = reverb;
 		this.doppler = doppler;
+		this.transmission = transmission;
+		this.transmissionLevel = transmissionLevel;
+		this.range = range;
+		this.updateMs = updateMs;
 	}
 
 	public String caption() { return "d3sound.preset." + key; }
@@ -81,6 +91,10 @@ public enum D3Preset {
 		config.structureLevel = structureLevel;
 		config.reverb = reverb;
 		config.doppler = doppler;
+		config.transmission = transmission;
+		config.transmissionLevel = transmissionLevel;
+		config.range = range;
+		config.updateMs = updateMs;
 	}
 
 	/** Совпадают ли текущие настройки с этим набором. */
@@ -93,7 +107,11 @@ public enum D3Preset {
 			&& config.structure == structure
 			&& config.structureLevel == structureLevel
 			&& config.reverb == reverb
-			&& config.doppler == doppler;
+			&& config.doppler == doppler
+			&& config.transmission == transmission
+			&& config.transmissionLevel == transmissionLevel
+			&& config.range == range
+			&& config.updateMs == updateMs;
 	}
 
 	/** Какой набор сейчас выставлен; {@code null}, если настройки правились руками. */

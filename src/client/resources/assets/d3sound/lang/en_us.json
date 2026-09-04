@@ -48,7 +48,17 @@
   "d3sound.preset.balanced": "Balanced",
   "d3sound.preset.balanced.tip": "The defaults: everything on, up to 40 % of the CPU, overall ceiling 70 %. A sensible place to start.",
   "d3sound.preset.performance": "Performance",
-  "d3sound.preset.performance.tip": "The cheapest setting that is still not vanilla audio: up to 8 % of the CPU, quality fixed at 20 %. Direction, distance and muffling behind obstacles remain; reflections and structure-borne sound are off — they cost almost all of the computation. No echo, no room tail.",
+  "d3sound.preset.performance.tip": "The cheapest setting that is still not vanilla audio: up to 8 % of the CPU, quality fixed at 20 %, range 12 blocks, one solve every 220 ms. Direction, distance, muffling behind obstacles and sound through walls remain; reflections and structure-borne sound are off — they cost almost all of the computation. No echo, no room tail.",
   "d3sound.preset.cinematic": "High quality",
-  "d3sound.preset.cinematic.tip": "Pretty rather than accurate. A richer tail than reality (130 %), cleaner and duller transmission through walls (60 %), slightly exaggerated Doppler (115 %), up to 50 % of the CPU. Physically a lie, but roomier and more polished than most game audio engines."
+  "d3sound.preset.cinematic.tip": "Pretty rather than accurate. A richer tail than reality (130 %), cleaner and duller transmission through walls (60 %), slightly exaggerated Doppler (115 %), up to 50 % of the CPU. Physically a lie, but roomier and more polished than most game audio engines.",
+  "d3sound.options.value.blocks": "%s: %s blocks",
+  "d3sound.options.value.ms": "%s: %s ms",
+  "d3sound.options.transmission": "Sound through walls",
+  "d3sound.options.transmission.tip": "Sound that passes straight through a barrier: the wave presses on the wall, the wall vibrates as a whole and radiates it out the other side. How much is lost is set by the material's sound insulation: wool and foliage let almost everything through, stone leaves nothing but a dull rumble. Thickness follows the mass law — every doubling of the wall costs another 6 dB or so.",
+  "d3sound.options.transmission_level": "Through-wall level",
+  "d3sound.options.transmission_level.tip": "How loudly walls let sound pass through them. 100 % follows reference insulation values per material. Higher makes walls feel thinner, lower makes them feel thicker; 0 % removes this path entirely, leaving only diffraction around the wall and vibration through the blocks.",
+  "d3sound.options.range": "Simulation range",
+  "d3sound.options.range.tip": "Radius of the block cube the engine samples around you and computes all acoustics from. This is the costliest setting after rays: volume grows as the cube, so twice the radius is eight times the snapshot. A smaller radius drops distant walls out of the echo. Auto picks by quality, usually 14–32.",
+  "d3sound.options.update": "Update interval",
+  "d3sound.options.update.tip": "How often the acoustics are recomputed. Rarer is cheaper, but when you move fast the picture lags: sound keeps arriving from where you no longer are. More often is more accurate and more expensive. Auto picks by quality, usually 70–260 ms."
 }

@@ -82,6 +82,8 @@ public final class D3SoundEngine {
 	private int tickCounter;
 	/** Слушатель под водой — тогда меняется и среда, и переход через поверхность. */
 	private boolean listenerUnderwater;
+	/** Голова в лаве: звук вязкий и медленный, верхов не остаётся вовсе. */
+	private boolean listenerInLava;
 
 	// снимок мира набирается слоями, чтобы не собирать 200 тысяч блоков за раз
 	private VoxelSnapshot filling;
@@ -235,6 +237,7 @@ public final class D3SoundEngine {
 
 		applyConfig();
 		listenerUnderwater = client.player != null && client.player.isEyeInFluid(FluidTags.WATER);
+		listenerInLava = client.player != null && client.player.isEyeInFluid(FluidTags.LAVA);
 
 		if (++tickCounter % 20 == 0) mixer.air = airOf(level);
 
@@ -258,6 +261,10 @@ public final class D3SoundEngine {
 		budget.reflections = config.reflections;
 		budget.structure = config.structure;
 		budget.structureGain = config.structureLevel / 100f;
+		budget.transmission = config.transmission;
+		budget.transmissionGain = config.transmissionLevel / 100f;
+		budget.manualRadius = config.range;
+		budget.manualIntervalMs = config.updateMs;
 		binaural.delayScale = Math.max(0f, config.doppler / 100f);
 		mixer.setMasterGain(config.gain / 100f);
 	}
@@ -270,6 +277,7 @@ public final class D3SoundEngine {
 	 * холодная разрежённая пустота, звук медленный и вязкий.
 	 */
 	private Air airOf(Level level) {
+		if (listenerInLava) return Air.LAVA;
 		if (listenerUnderwater) return Air.WATER;
 		var type = level.dimensionTypeRegistration().unwrapKey().orElse(null);
 		if (type == BuiltinDimensionTypes.NETHER) return Air.nether();

@@ -51,6 +51,10 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			toggle("d3sound.options.reflections", config.reflections, value -> config.reflections = value),
 			toggle("d3sound.options.structure", config.structure, value -> config.structure = value),
 			percent("d3sound.options.structure_level", 0, 300, config.structureLevel, value -> config.structureLevel = value, false),
+			toggle("d3sound.options.transmission", config.transmission, value -> config.transmission = value),
+			percent("d3sound.options.transmission_level", 0, 300, config.transmissionLevel, value -> config.transmissionLevel = value, false),
+			amount("d3sound.options.range", 0, 64, config.range, value -> config.range = value, "d3sound.options.value.blocks"),
+			amount("d3sound.options.update", 0, 400, config.updateMs, value -> config.updateMs = value, "d3sound.options.value.ms"),
 			percent("d3sound.options.reverb", 0, 200, config.reverb, value -> config.reverb = value, true),
 			percent("d3sound.options.doppler", 0, 200, config.doppler, value -> config.doppler = value, false),
 			toggle("d3sound.options.overlay", config.overlay, value -> config.overlay = value)
@@ -109,6 +113,20 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			(caption, value) -> autoAtZero && value == 0
 				? Component.translatable("d3sound.options.value.auto", caption)
 				: Component.translatable("d3sound.options.value.percent", caption, value),
+			new OptionInstance.IntRange(min, max),
+			Math.max(min, Math.min(max, current)),
+			sink::accept);
+	}
+
+	/** Ползунок в своих единицах; ноль всегда означает «Авто». */
+	private static OptionInstance<Integer> amount(String key, int min, int max, int current,
+	                                              IntConsumer sink, String unitKey) {
+		return new OptionInstance<>(
+			key,
+			tip(key),
+			(caption, value) -> value == 0
+				? Component.translatable("d3sound.options.value.auto", caption)
+				: Component.translatable(unitKey, caption, value),
 			new OptionInstance.IntRange(min, max),
 			Math.max(min, Math.min(max, current)),
 			sink::accept);

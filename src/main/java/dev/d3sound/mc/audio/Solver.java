@@ -182,6 +182,8 @@ public final class Solver {
 				solution.addTap(distance / c, bandBuffer, (float) dx, (float) dy, (float) dz);
 			} else if (diffraction) {
 				addDiffracted(world, job, s, c, solution);
+			} else if (budget.transmission) {
+				// без расчёта обхода остаётся только то, что прошло насквозь
 			} else {
 				// без расчёта обхода звук за преградой просто глохнет
 				float spread = spread(distance);
@@ -190,6 +192,9 @@ public final class Solver {
 				}
 				solution.addTap(distance / c, bandBuffer, (float) dx, (float) dy, (float) dz);
 			}
+
+			// --- звук, прошедший преграду насквозь: глухой, зато по прямой
+			if (blocked && budget.transmission) addTransmitted(world, job, s, c, solution);
 
 			// --- путь по самим блокам: им слышно соседей за стеной
 			if (budget.structure) addStructureBorne(world, job, s, c, solution);
@@ -367,6 +372,89 @@ public final class Solver {
 			solution.addTap(pathLength / c, bandBuffer, dirBuffer[0], dirBuffer[1], dirBuffer[2]);
 		}
 	}
+
+	/**
+	 * Звук, прошедший преграду насквозь.
+	 *
+	 * Это не обход и не вибрация по блокам, а третий, самый прямолинейный путь:
+	 * волна давит на стену, стена колеблется как целое и переизлучает звук с
+	 * другой стороны. Сколько при этом теряется, задаёт звукоизоляция R —
+	 * величина справочная и очень разная: тонкая шерсть отдаёт почти всё, метр
+	 * камня не отдаёт почти ничего.
+	 *
+	 * Толщина считается по закону массы: каждое удвоение даёт примерно +6 дБ,
+	 * поэтому вторая стена добавляет заметно меньше первой. Тонкая, меньше
+	 * блока, преграда (забор, стекло в раме) изолирует пропорционально тому,
+	 * сколько её на пути.
+	 *
+	 * Слышится такой звук из стены и очень глухо: R растёт с частотой, так что
+	 * от голоса за стеной остаётся один бубнёж — ровно то, что слышно в жизни.
+	 */
+	private void addTransmitted(VoxelSnapshot world, Job job, int s, float c, Solution solution) {
+		double lx = world.toLocalX(world.listenerX);
+		double ly = world.toLocalY(world.listenerY);
+		double lz = world.toLocalZ(world.listenerZ);
+		double dxl = sxLocal[s] - lx, dyl = syLocal[s] - ly, dzl = szLocal[s] - lz;
+		double dist = Math.sqrt(dxl * dxl + dyl * dyl + dzl * dzl);
+		if (dist < 1e-6) return;
+		double ux = dxl / dist, uy = dyl / dist, uz = dzl / dist;
+
+		java.util.Arrays.fill(worstR, 0f);
+		float thickness = 0f;
+
+		int x = (int) Math.floor(lx), y = (int) Math.floor(ly), z = (int) Math.floor(lz);
+		int stepX = ux > 0 ? 1 : -1, stepY = uy > 0 ? 1 : -1, stepZ = uz > 0 ? 1 : -1;
+		double tdx = Math.abs(1 / (ux == 0 ? 1e-9 : ux));
+		double tdy = Math.abs(1 / (uy == 0 ? 1e-9 : uy));
+		double tdz = Math.abs(1 / (uz == 0 ? 1e-9 : uz));
+		double tmx = (stepX > 0 ? (x + 1 - lx) : (lx - x)) * tdx;
+		double tmy = (stepY > 0 ? (y + 1 - ly) : (ly - y)) * tdy;
+		double tmz = (stepZ > 0 ? (z + 1 - lz) : (lz - z)) * tdz;
+
+		double travelled = 0;
+		for (int guard = 0; guard < 512 && travelled < dist - 0.05; guard++) {
+			if (tmx < tmy) {
+				if (tmx < tmz) { x += stepX; travelled = tmx; tmx += tdx; }
+				else { z += stepZ; travelled = tmz; tmz += tdz; }
+			} else {
+				if (tmy < tmz) { y += stepY; travelled = tmy; tmy += tdy; }
+				else { z += stepZ; travelled = tmz; tmz += tdz; }
+			}
+			if (travelled >= dist - 0.05) break;
+			if (!world.inside(x, y, z)) return;
+			byte id = world.local(x, y, z);
+			if (id == VoxelSnapshot.AIR) continue;
+			Materials m = Materials.values()[id];
+			float fill = Math.max(0.05f, world.fill(x, y, z));
+			thickness += fill;
+			// изоляцию стены задаёт самый плотный её слой, остальное идёт в толщину
+			for (int b = 0; b < Materials.BAND_COUNT; b++) {
+				if (m.transmission[b] > worstR[b]) worstR[b] = m.transmission[b];
+			}
+		}
+		if (thickness <= 0f) return;
+
+		float spread = spread((float) dist);
+		float gain = budget.transmissionGain;
+		float sum = 0, level = 0;
+		for (int b = 0; b < Materials.BAND_COUNT; b++) {
+			// закон массы: удвоение толщины — примерно +6 дБ; тоньше блока —
+			// пропорционально тому, сколько преграды реально на пути
+			float r = thickness >= 1f
+				? worstR[b] + 6f * (float) (Math.log(thickness) / Math.log(2))
+				: worstR[b] * thickness;
+			bandBuffer[b] = spread * gain * (float) Math.pow(10.0, -r / 20.0);
+			sum += r;
+			level += bandBuffer[b];
+		}
+		solution.transmissionDb = sum / Materials.BAND_COUNT;
+		if (level < 1e-5f) return;
+		solution.transmissionTap = solution.addTap((float) dist / c, bandBuffer,
+			(float) dxl, (float) dyl, (float) dzl);
+	}
+
+	/** Изоляция самого плотного слоя преграды по полосам, дБ. */
+	private final float[] worstR = new float[Materials.BAND_COUNT];
 
 	/**
 	 * Звук, ушедший в конструкцию и вышедший из стены рядом со слушателем.

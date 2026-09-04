@@ -29,6 +29,7 @@ public final class Bench {
 		occlusion();
 		structure();
 		outdoor();
+		throughWall();
 		toggles();
 		budget();
 		mixer();
@@ -351,6 +352,79 @@ public final class Bench {
 		return world;
 	}
 
+	/* --- за стенкой: огибание, проход насквозь и герметичность стен --- */
+
+	private static void throughWall() {
+		System.out.println();
+		System.out.println("== за стенкой ==");
+
+		VoxelSnapshot stone = openBox(20, Materials.STONE);
+		Solution s = solve(stone, stone.originX + 25.5, stone.originY + 20.5, stone.originZ + 20.5, false);
+		double direct = 5.0;   // слушатель в центре снимка, источник в пяти блоках
+		float earliest = Float.MAX_VALUE;
+		for (int t = 0; t < s.tapCount; t++) {
+			if (t == s.structureTap) continue;   // по блокам звук идёт быстрее воздуха, это законно
+			earliest = Math.min(earliest, s.delay[t]);
+		}
+		// отвод стоит в середине своего пятимиллисекундного бина, отсюда и допуск
+		double shortest = (direct / 343.0) - 0.0026;
+		System.out.printf("  коробка без крыши: отводов %d, огибание %.1f дБ, сквозь стену %.1f дБ%n",
+			s.tapCount, s.diffractionDb, s.transmissionDb);
+		expect("сквозь стену звук по воздуху не срезает путь", earliest >= shortest,
+			String.format("самый ранний %.2f мс, прямой %.2f мс", earliest * 1000, direct / 343.0 * 1000));
+
+		int around = s.transmissionTap == 0 ? 1 : 0;
+		if (s.tapCount > around && around != s.structureTap) {
+			double low = s.bands[around][0], high = s.bands[around][6];
+			expect("из-за стены звук приходит глухим", low > high * 3,
+				String.format("низ %.4f, верх %.4f", low, high));
+		}
+
+		expect("сквозь камень что-то проходит, но еле-еле", s.transmissionDb > 40,
+			String.format("%.1f дБ изоляции", s.transmissionDb));
+
+		VoxelSnapshot wool = openBox(20, Materials.WOOL);
+		Solution soft = solve(wool, wool.originX + 25.5, wool.originY + 20.5, wool.originZ + 20.5, false);
+		System.out.printf("  шерстяная коробка: сквозь стену %.1f дБ%n", soft.transmissionDb);
+		expect("сквозь шерсть проходит куда легче, чем сквозь камень",
+			soft.transmissionDb < s.transmissionDb - 20,
+			String.format("%.1f против %.1f дБ", soft.transmissionDb, s.transmissionDb));
+
+		double stoneLevel = s.transmissionTap >= 0 ? energy(s, s.transmissionTap) : 0;
+		double woolLevel = soft.transmissionTap >= 0 ? energy(soft, soft.transmissionTap) : 0;
+		expect("за шерстяной стеной слышно громче, чем за каменной", woolLevel > stoneLevel,
+			String.format("%.5f против %.5f", woolLevel, stoneLevel));
+
+		Solution off = solveFull(wool, wool.originX + 25.5, wool.originY + 20.5, wool.originZ + 20.5,
+			false, true, true, true, false);
+		expect("проход сквозь стену выключается", off.transmissionTap < 0 && soft.transmissionTap >= 0,
+			"отвод " + soft.transmissionTap);
+	}
+
+	/** Каменная коробка 5×5 без крыши в чистом поле; слушатель снаружи у стены. */
+	private static VoxelSnapshot openBox(int radius, Materials wall) {
+		VoxelSnapshot world = new VoxelSnapshot(radius);
+		world.setOrigin(0.5, 0.5, 0.5);
+		int c = radius;
+		for (int x = 0; x < world.size; x++) {
+			for (int y = 0; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) {
+					world.set(x, y, z, y < c - 1 ? (byte) Materials.DIRT.ordinal() : VoxelSnapshot.AIR, (byte) 100);
+				}
+			}
+		}
+		int bx = c + 5;
+		for (int x = bx - 2; x <= bx + 2; x++) {
+			for (int z = c - 2; z <= c + 2; z++) {
+				for (int y = c - 1; y <= c + 1; y++) {
+					boolean side = x == bx - 2 || x == bx + 2 || z == c - 2 || z == c + 2;
+					if (side) world.set(x, y, z, (byte) wall.ordinal(), (byte) 100);
+				}
+			}
+		}
+		return world;
+	}
+
 	/* --- переключатели в настройках должны и правда что-то менять --- */
 
 	private static void toggles() {
@@ -403,6 +477,21 @@ public final class Bench {
 		for (int i = 0; i < 200; i++) budget.update(0.2f);
 		expect("на свободной машине качество растёт", budget.quality() > heavy,
 			String.format("качество %.2f, доля %.1f%%", budget.quality(), budget.ownShare() * 100));
+
+		// ручные дальность и период должны перебивать автоподбор
+		Budget manual = new Budget();
+		manual.manualRadius = 12;
+		manual.manualIntervalMs = 220;
+		expect("ручная дальность перебивает авто", manual.radius() == 12, manual.radius() + " блоков");
+		expect("ручной период перебивает авто", manual.intervalMs() == 220, manual.intervalMs() + " мс");
+		manual.manualRadius = 999;
+		manual.manualIntervalMs = 1;
+		expect("невменяемые значения зажимаются",
+			manual.radius() <= 64 && manual.intervalMs() >= 20,
+			manual.radius() + " блоков, " + manual.intervalMs() + " мс");
+		Budget auto = new Budget();
+		expect("ноль означает авто", auto.radius() >= 14 && auto.radius() <= 32,
+			auto.radius() + " блоков");
 
 		Budget tight = new Budget();
 		tight.ownShareLimit = 0.02f;
@@ -549,7 +638,14 @@ public final class Bench {
 
 	private static Solution solve(VoxelSnapshot world, double sxw, double syw, double szw, boolean impact,
 	                              boolean diffraction, boolean reflections, boolean structure) {
+		return solveFull(world, sxw, syw, szw, impact, diffraction, reflections, structure, true);
+	}
+
+	private static Solution solveFull(VoxelSnapshot world, double sxw, double syw, double szw, boolean impact,
+	                                  boolean diffraction, boolean reflections, boolean structure,
+	                                  boolean transmission) {
 		Budget budget = new Budget();
+		budget.transmission = transmission;
 		budget.manualQuality = 0.5f;
 		budget.diffraction = diffraction;
 		budget.reflections = reflections;
