@@ -26,6 +26,13 @@ import java.util.stream.Stream;
  *
  * Разбираются только классы примесей и всё, что названо звуком: этого хватает,
  * чтобы поймать любой звуковой мод, и это не стоит заметного времени.
+ *
+ * Важно, ЧТО именно мод делает с этими классами. Одно дело примешаться к
+ * движку звука и поменять его поведение — тогда мы и правда спорим за один и
+ * тот же тракт. Другое дело просто вызвать его, чтобы проиграть свой звук:
+ * такой звук приходит к нам обычным путём и считается нашей физикой, как
+ * любой ванильный. Поэтому примесь и упоминание разводятся: за примесь
+ * предупреждаем всерьёз, за упоминание — только отмечаем.
  */
 public final class Conflicts {
 	/** Насколько серьёзно мод мешает. */
@@ -34,8 +41,12 @@ public final class Conflicts {
 	/** Найденное вмешательство: мод, куда лезет и чем это грозит. */
 	public record Found(String modId, String name, Level level, String reason) {}
 
-	/** Что ищем в коде мода и как это назвать по-человечески. */
-	private record Marker(String className, Level level, String what) {}
+	/**
+	 * Что ищем в коде мода и как это назвать по-человечески.
+	 *
+	 * @param asMixin насколько это серьёзно, если мод к классу примешивается
+	 */
+	private record Marker(String className, Level asMixin, String what) {}
 
 	private static final List<Marker> MARKERS = List.of(
 		new Marker("net/minecraft/client/sounds/SoundEngine", Level.BLOCKING, "движок звука"),
@@ -48,6 +59,20 @@ public final class Conflicts {
 		new Marker("net/minecraft/client/sounds/AudioStream", Level.PARTIAL, "звуковые потоки"),
 		new Marker("net/minecraft/client/resources/sounds/SoundInstance", Level.PARTIAL, "сами звуки")
 	);
+
+	/** По этой строке класс-примесь узнаётся в скомпилированном виде. */
+	private static final String MIXIN_MARK = "org/spongepowered/asm/mixin/Mixin";
+
+	/**
+	 * Насколько серьёзно вмешательство.
+	 *
+	 * Мод, который лишь вызывает звуковые классы, ничего у нас не отнимает:
+	 * его звук идёт через ту же выдачу, что и ванильный, и попадает к нам.
+	 * Всерьёз мешает только тот, кто меняет поведение самих классов.
+	 */
+	static Level levelOf(Marker marker, boolean asMixin) {
+		return asMixin ? marker.asMixin() : Level.MINOR;
+	}
 
 	/** Свои и служебные — их проверять незачем. */
 	private static final Set<String> SKIP = Set.of("d3sound", "minecraft", "java", "fabricloader", "fabric-api", "mixinextras");
@@ -112,10 +137,17 @@ public final class Conflicts {
 							continue;
 						}
 						String text = new String(bytes, StandardCharsets.ISO_8859_1);
+						boolean asMixin = text.contains(MIXIN_MARK);
 						for (Marker marker : MARKERS) {
 							if (!text.contains(marker.className())) continue;
-							touched.add(marker.what());
-							if (level == null || marker.level().compareTo(level) < 0) level = marker.level();
+							Level here = levelOf(marker, asMixin);
+							// показываем только то, что дало самый строгий уровень:
+							// иначе к «примешивается к движку» прилипнет всё подряд
+							if (level == null || here.compareTo(level) < 0) {
+								level = here;
+								touched.clear();
+							}
+							if (here == level) touched.add(marker.what());
 						}
 					}
 				} catch (IOException | RuntimeException ignored) {
@@ -143,7 +175,8 @@ public final class Conflicts {
 			case BLOCKING -> "Вмешивается в " + parts + ". Мы забираем звуки себе, поэтому вместе получится "
 				+ "либо двойная обработка, либо тишина — такой мод лучше отключить.";
 			case PARTIAL -> "Трогает " + parts + ". Работать будет, но его звуки могут идти мимо нашей физики.";
-			case MINOR -> "Слегка касается звука (" + parts + "), заметных помех быть не должно.";
+			case MINOR -> "Обращается к звуку игры (" + parts + "), но ничего в нём не меняет: "
+				+ "его звуки идут обычным путём и считаются нашей физикой, как ванильные.";
 		};
 	}
 }
