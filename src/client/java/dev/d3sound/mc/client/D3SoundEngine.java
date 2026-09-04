@@ -74,6 +74,15 @@ public final class D3SoundEngine {
 
 	private final Map<SoundInstance, Source> playing = new ConcurrentHashMap<>();
 	private final Map<Identifier, Pcm> pcmCache = new ConcurrentHashMap<>();
+	/**
+	 * Звуки, которые мы забрали, но ещё не запустили.
+	 *
+	 * Распаковка идёт в другом потоке, и за это время игра успевает звук
+	 * остановить. Раньше останавливать было нечего — источника ещё нет, — и
+	 * колбэк потом всё равно его запускал: сломанный проигрыватель продолжал
+	 * играть пластинку до конца, и снять её было нечем.
+	 */
+	private final java.util.Set<SoundInstance> pending = ConcurrentHashMap.newKeySet();
 	private final AtomicLong nextId = new AtomicLong(1);
 
 	private SoundEngine soundEngine;
@@ -101,6 +110,13 @@ public final class D3SoundEngine {
 	public Solver solver() { return solver; }
 	public int activeSources() { return playing.size(); }
 
+	/** Сколько звучит источников, у которых есть место в мире. */
+	private int positional() {
+		int count = 0;
+		for (Source s : playing.values()) if (!s.relative) count++;
+		return count;
+	}
+
 	/* ------------------------------------------------------------------ */
 	/*  перехват                                                           */
 	/* ------------------------------------------------------------------ */
@@ -109,12 +125,17 @@ public final class D3SoundEngine {
 	                        net.minecraft.client.resources.sounds.Sound sound,
 	                        float volume, float pitch, boolean looping) {
 		if (!enabled) return false;
-		if (instance.isRelative()) return false;
-		if (instance.getAttenuation() == SoundInstance.Attenuation.NONE) return false;
-		if (playing.size() >= Tracer.MAX_SOURCES) return false;
+		// музыка и эмбиент звучат «в голове», а не из точки мира: физике
+		// распространения их подвергать нечему, но среда вокруг на них влияет
+		boolean local = instance.isRelative() || instance.getAttenuation() == SoundInstance.Attenuation.NONE;
+		if (local && localAmount <= 0f) return false;
+		// предел считаем только по звукам мира: музыка геометрию не занимает,
+		// и терять её из-за того, что вокруг шумно, незачем
+		if (!local && positional() >= Tracer.MAX_SOURCES) return false;
 
 		this.soundEngine = engine;
 		solver.start();
+		pending.add(instance);
 
 		Identifier path = sound.getPath();
 		if (sound.shouldStream()) {
@@ -125,6 +146,7 @@ public final class D3SoundEngine {
 
 		Pcm cached = pcmCache.get(path);
 		if (cached != null) {
+			pending.remove(instance);
 			start(instance, cached, volume, pitch, looping);
 			return true;
 		}
@@ -132,10 +154,13 @@ public final class D3SoundEngine {
 		SoundEngineAccessor accessor = (SoundEngineAccessor) engine;
 		accessor.d3sound$soundBuffers().getCompleteBuffer(path).thenAccept(buffer -> {
 			Pcm pcm = decode(buffer);
-			if (pcm == null) return;
+			if (pcm == null) { pending.remove(instance); return; }
 			pcmCache.put(path, pcm);
+			// звук могли остановить, пока мы распаковывали
+			if (!pending.remove(instance)) return;
 			start(instance, pcm, volume, pitch, looping);
 		}).exceptionally(error -> {
+			pending.remove(instance);
 			LOG.warn("D3Sound: нет семплов {}: {}", path, error.toString());
 			return null;
 		});
@@ -173,6 +198,7 @@ public final class D3SoundEngine {
 	}
 
 	public void stop(SoundInstance instance) {
+		pending.remove(instance);
 		Source source = playing.remove(instance);
 		if (source != null) {
 			source.stopping = true;
@@ -181,6 +207,7 @@ public final class D3SoundEngine {
 	}
 
 	public void stopAll() {
+		pending.clear();
 		for (Source s : playing.values()) { s.stopping = true; solver.forget(s.id); }
 		playing.clear();
 	}
@@ -209,6 +236,11 @@ public final class D3SoundEngine {
 		SoundEngineAccessor accessor = (SoundEngineAccessor) engine;
 		// повтор берёт на себя сам поток: он просто не кончается
 		accessor.d3sound$soundBuffers().getStream(path, looping).thenAccept(stream -> {
+			// пока поток открывался, звук могли остановить
+			if (!pending.remove(instance)) {
+				try { stream.close(); } catch (Exception ignored) { }
+				return;
+			}
 			AudioFormat format = stream.getFormat();
 			int rate = (int) format.getSampleRate();
 			Source source = Source.streaming(nextId.getAndIncrement(), instance.getIdentifier().toString(),
@@ -226,6 +258,7 @@ public final class D3SoundEngine {
 				(int) source.x, (int) source.y, (int) source.z);
 			pumpStream(stream, source, format);
 		}).exceptionally(error -> {
+			pending.remove(instance);
 			LOG.warn("D3Sound: поток {} не открылся: {}", path, error.toString());
 			return null;
 		});
@@ -392,6 +425,7 @@ public final class D3SoundEngine {
 		budget.manualIntervalMs = config.updateMs;
 		budget.manualSources = config.maxSources;
 		budget.diffractionGain = config.diffractionLevel / 100f;
+		localAmount = config.localAmbience / 100f;
 		binaural.delayScale = Math.max(0f, config.doppler / 100f);
 		mixer.setMasterGain(config.gain / 100f);
 	}
@@ -612,7 +646,7 @@ public final class D3SoundEngine {
 		lastSubmit = now;
 
 		List<Source> list = new ArrayList<>(playing.values());
-		list.removeIf(s -> s.finished || !snapshot.covers(s.x, s.y, s.z));
+		list.removeIf(s -> s.finished || s.relative || !snapshot.covers(s.x, s.y, s.z));
 		int limit = Math.min(Tracer.MAX_SOURCES, budget.sources());
 		if (list.size() > limit) {
 			// считать честно всё сразу дорого, поэтому лишнее отбрасываем — но
@@ -652,6 +686,18 @@ public final class D3SoundEngine {
 			if (instance instanceof net.minecraft.client.resources.sounds.TickableSoundInstance tickable
 				&& tickable.isStopped()) {
 				stop(instance);
+				continue;
+			}
+
+			// музыка и эмбиент: положения в мире у них нет, но среда на них влияет
+			if (source.relative) {
+				if (soundEngine != null) {
+					SoundEngineAccessor accessor = (SoundEngineAccessor) soundEngine;
+					float live = accessor.d3sound$calculateVolume(instance);
+					if (live > 0) source.volume = live; else source.stopping = true;
+					source.pitch = accessor.d3sound$calculatePitch(instance);
+				}
+				applyLocal(source);
 				continue;
 			}
 
@@ -716,8 +762,63 @@ public final class D3SoundEngine {
 		}
 	}
 
+	/** Насколько сильно среда красит местные звуки. 0 — отдать их игре как есть. */
+	private volatile float localAmount = 1f;
+
+	/**
+	 * Под водой у местных звуков глохнет верх, дБ по полосам.
+	 *
+	 * Голова в воде: до барабанной перепонки высокие частоты почти не доходят,
+	 * остаётся низ и ощущение давления. Ровно поэтому под водой музыка звучит
+	 * так, будто играет за стеной.
+	 */
+	private static final float[] SUBMERGED_DB = {1f, 2f, 4f, 7f, 12f, 18f, 24f};
+	/** То же в лаве, только сильнее: среда вязкая и горячая. */
+	private static final float[] MOLTEN_DB = {2f, 4f, 8f, 13f, 20f, 28f, 36f};
+
+	/**
+	 * Местный звук: музыка, эмбиент, всё, что звучит «в голове».
+	 *
+	 * Направления и расстояния у него нет — придумывать их нечестно. Зато на
+	 * него влияет то, где находится сам игрок: под водой глохнет верх, в лаве
+	 * ещё сильнее, а в замкнутом помещении к музыке добавляется хвост той же
+	 * длины, что и у всего остального вокруг. В чистом поле хвоста нет — там
+	 * ему неоткуда взяться.
+	 */
+	private void applyLocal(Source source) {
+		float amount = localAmount;
+		float[] colour = listenerInLava ? MOLTEN_DB : (listenerUnderwater ? SUBMERGED_DB : null);
+		for (int b = 0; b < Materials.BAND_COUNT; b++) {
+			bandBuffer[b] = colour == null ? 1f
+				: (float) Math.pow(10.0, -(colour[b] * amount) / 20.0);
+		}
+
+		Source.Tap tap = source.taps[0];
+		if (!tap.active) tap.arm();
+		tap.targetDelayLeft = 0f;
+		tap.targetDelayRight = 0f;
+		// три полосы микшера: низ, середина, верх — усредняем в них спектр
+		tap.targetGainLeft[0] = tap.targetGainRight[0] = (bandBuffer[0] + bandBuffer[1]) / 2;
+		tap.targetGainLeft[1] = tap.targetGainRight[1] = (bandBuffer[2] + bandBuffer[3] + bandBuffer[4]) / 3;
+		tap.targetGainLeft[2] = tap.targetGainRight[2] = (bandBuffer[5] + bandBuffer[6]) / 2;
+		tap.active = true;
+		for (int t = 1; t < Source.MAX_TAPS; t++) source.taps[t].active = false;
+		source.tapCount = 1;
+
+		// хвост помещения: в пещере музыка гулкая, в поле сухая
+		float[] rt = solver.rt60;
+		float mid = rt.length > 2 ? rt[2] : 0f;
+		float room = Math.min(0.6f, mid * 0.25f) * (1f - solver.openness);
+		float wet = listenerUnderwater || listenerInLava ? Math.max(room, 0.25f) : room;
+		source.targetSend = wet * amount;
+	}
+
 	/** Пока решателя нет: прямой звук без преград. */
 	private void applyFallback(Source source) {
+		// у местного звука позиции нет: считать по ней расстояние — значит
+		// на первом же кадре увести музыку в тишину
+		if (source.relative) { applyLocal(source); return; }
+
 		double dx = source.x - mixer.listenerX;
 		double dy = source.y - mixer.listenerY;
 		double dz = source.z - mixer.listenerZ;

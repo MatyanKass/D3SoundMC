@@ -362,8 +362,11 @@ public final class Tracer {
 			}
 			if (!world.inside(x, y, z)) break;
 			byte id = world.local(x, y, z);
-			// частичный блок отражает не весь луч: доля проходит мимо него насквозь
-			if (id != VoxelSnapshot.AIR && nextFloat() > world.fill(x, y, z)) continue;
+			// частичный блок отражает не весь луч: доля проходит мимо него насквозь.
+			// Спрашиваем перекрытие вдоль той оси, по которой луч вошёл: мимо плиты
+			// сбоку он пролетит, а сверху упрётся, и наоборот у ограды
+			int axis = nx != 0 ? 0 : (ny != 0 ? 1 : 2);
+			if (id != VoxelSnapshot.AIR && nextFloat() > world.cover(axis, x, y, z)) continue;
 			if (id != VoxelSnapshot.AIR) {
 				ray.material = Materials.values()[id];
 				ray.distance = (float) travelled;

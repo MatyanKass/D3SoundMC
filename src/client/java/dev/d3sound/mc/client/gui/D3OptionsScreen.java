@@ -57,6 +57,7 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			amount("d3sound.options.range", 0, 64, config.range, value -> config.range = value, "d3sound.options.value.blocks"),
 			amount("d3sound.options.update", 0, 400, config.updateMs, value -> config.updateMs = value, "d3sound.options.value.ms"),
 			amount("d3sound.options.sources", 0, 24, config.maxSources, value -> config.maxSources = value, "d3sound.options.value.count"),
+			percent("d3sound.options.local", 0, 200, config.localAmbience, value -> config.localAmbience = value, false),
 			percent("d3sound.options.reverb", 0, 200, config.reverb, value -> config.reverb = value, true),
 			percent("d3sound.options.doppler", 0, 200, config.doppler, value -> config.doppler = value, false),
 			toggle("d3sound.options.overlay", config.overlay, value -> config.overlay = value)

@@ -65,5 +65,7 @@
   "d3sound.options.diffraction_level": "Diffraction strength",
   "d3sound.options.diffraction_level.tip": "How dearly sound pays to bend around an obstacle. 100 % follows Maekawa, as in real life: around a corner it is muffled but audible. Higher makes corners noticeably quieter and duller; lower lets sound bend more readily than it should. Costs nothing in CPU — it only changes the sound.",
   "d3sound.options.sources": "Sources simulated",
-  "d3sound.options.sources.tip": "How many sounds get the full physics at once. Each source is a separate energy deposit at every bounce of every ray, so the cost grows in direct proportion. The rest fall back to simple handling, and it is always the most distant that are dropped — nearby sound matters more. Auto picks by quality, usually 6–24."
+  "d3sound.options.sources.tip": "How many sounds get the full physics at once. Each source is a separate energy deposit at every bounce of every ray, so the cost grows in direct proportion. The rest fall back to simple handling, and it is always the most distant that are dropped — nearby sound matters more. Auto picks by quality, usually 6–24.",
+  "d3sound.options.local": "Local sound depth",
+  "d3sound.options.local.tip": "Music and ambience play in your head rather than from a point in the world, so distance and direction do not apply to them. What does apply is the medium you are in: underwater their top end goes and you are left with the low rumble of pressure, lava is stronger still, and indoors they pick up the same tail as everything else — out in the open there is none. 0 % hands these sounds back to the game untouched."
 }

@@ -33,6 +33,7 @@ public final class Bench {
 		throughWall();
 		toggles();
 		budget();
+		coverage();
 		streaming();
 		mixer();
 
@@ -635,6 +636,30 @@ public final class Bench {
 		expect("время затухания при делении на куски то же",
 			Math.abs(whole.rt60[2] - part.rt60[2]) < whole.rt60[2] * 0.25f,
 			String.format("%.2f против %.2f с", whole.rt60[2], part.rt60[2]));
+	}
+
+	/* --- перекрытие спрашивается вдоль той оси, по которой идёт луч --- */
+
+	private static void coverage() {
+		System.out.println();
+		System.out.println("== перекрытие по осям ==");
+		VoxelSnapshot world = new VoxelSnapshot(8);
+		world.setOrigin(0.5, 0.5, 0.5);
+		// плита: сверху вниз сплошная, вбок почти пустая
+		world.set(3, 3, 3, (byte) Materials.STONE.ordinal(), (byte) 50, (byte) 10, (byte) 100, (byte) 10);
+		expect("вдоль плиты пути почти нет преграды", world.cover(0, 3, 3, 3) < 0.2f,
+			String.format("%.2f", world.cover(0, 3, 3, 3)));
+		expect("сверху плита перекрывает всё", world.cover(1, 3, 3, 3) > 0.9f,
+			String.format("%.2f", world.cover(1, 3, 3, 3)));
+		expect("преградой клетку делает самая закрытая ось", world.blocking(3, 3, 3),
+			String.format("максимум %.2f", world.cover(3, 3, 3)));
+		expect("объём остался объёмом", Math.abs(world.fill(3, 3, 3) - 0.5f) < 0.01f,
+			String.format("%.2f", world.fill(3, 3, 3)));
+
+		// пустая клетка ничего не перекрывает ни по одной оси
+		expect("воздух не перекрывает ничего",
+			world.cover(0, 4, 4, 4) == 0 && world.cover(1, 4, 4, 4) == 0 && world.cover(2, 4, 4, 4) == 0,
+			"чисто");
 	}
 
 	/* --- длинный звук, который подаётся порциями --- */

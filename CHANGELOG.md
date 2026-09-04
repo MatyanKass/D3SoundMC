@@ -5,6 +5,26 @@
 Version format: `1.6.1` — the second digit changes on noticeable engine work,
 the third on small fixes.
 
+## V-1.9.0 — 4 September 2026
+
+* **A stopped sound could start anyway.** Decoding happens on another thread,
+  and `stop` only removed what was already playing — a sound still being
+  decoded was not there yet, so the callback started it afterwards regardless.
+  For a footstep that is a blip; for a record it meant minutes of music that
+  breaking the jukebox would not silence. Sounds are now marked as pending, and
+  a stop while pending cancels the start.
+* Rays ask a cell how much it is covered **along the axis they entered by**,
+  instead of by filled volume. A ray passes a slab from the side and is stopped
+  from above, as it should be.
+* **Music and ambience are now processed too.** They play in your head rather
+  than from a point in the world, so distance and direction do not apply — but
+  the medium around you does. Underwater their top end is gone and what remains
+  is the low pressure rumble; lava is stronger still; indoors they pick up the
+  same tail as everything else, and out in the open there is none. New setting,
+  0 % hands them back to the game untouched.
+* Music is no longer dropped when the world is noisy: the source limit counts
+  only sounds that occupy geometry.
+
 ## V-1.8.0 — 4 September 2026
 
 * **Streamed sound arrived in pieces, with a click every fraction of a second.**
