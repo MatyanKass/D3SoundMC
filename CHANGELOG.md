@@ -1,95 +1,97 @@
-# Журнал версий
+# Changelog
 
-*[English version](CHANGELOG.en.md)*
+*[Русская версия](CHANGELOG.ru.md)*
 
-Формат номера: `1.6.1` — вторая цифра меняется при заметных переменах в движке,
-третья — при мелких правках и починках.
+Version format: `1.6.1` — the second digit changes on noticeable engine work,
+the third on small fixes.
 
-## V-1.6.1 — 4 сентября 2026
+## V-1.6.1 — 4 September 2026
 
-* Кнопка текущего набора настроек больше не гаснет. Раньше это читалось как
-  поломка: набор, который уже стоит, было буквально нельзя нажать. Теперь он
-  просто отмечен галочкой, а нажать можно любой — заодно так набор возвращается
-  на место после ручных правок.
-* Детектор конфликтов перестал грубить. Уровень ставился за любое упоминание
-  звукового класса, а обратиться к движку звука нужно всякому, кто просто хочет
-  проиграть свой звук — поэтому FancyMenu, Melody, Dynamic FPS и CreativeCore
-  получали ярлык «лучше отключить». Теперь примесь отличается от вызова, и
-  всерьёз предупреждаем только о тех, кто меняет поведение самих классов.
+* The active preset button is no longer greyed out. It read as a fault: the
+  preset you already had was literally unclickable. It is now marked with a tick
+  and any button can be pressed — which also puts a preset back after manual
+  tweaks.
+* The conflict detector stopped crying wolf. It rated a mod by any *mention* of
+  a sound class, and anything that merely wants to play a sound has to call the
+  sound engine — so FancyMenu, Melody, Dynamic FPS and CreativeCore were all
+  labelled "better disable this". Mixing into a class is now told apart from
+  calling it, and only mods that change those classes' behaviour raise a real
+  warning.
 
-## V-1.6.0 — 4 сентября 2026
+## V-1.6.0 — 4 September 2026
 
-* При переполнении список источников обрезался как попало, и вылететь мог самый
-  близкий и важный звук. Теперь отбрасываются самые далёкие.
-* Новая настройка: сколько источников считать честно (авто 6…24 по качеству).
-  Цена расчёта растёт по ним прямо пропорционально — это прямой рычаг
-  оптимизации.
-* Новая настройка: сила огибания преград. Множитель потерь на кромке; на
-  нагрузку не влияет, только на звучание.
+* When there were too many sources the list was truncated arbitrarily, so the
+  nearest and most important sound could be the one dropped. The most distant
+  ones go first now.
+* New setting: how many sources get the full physics (auto 6–24 by quality).
+  Cost grows in direct proportion to them, so this is a direct optimisation
+  lever.
+* New setting: diffraction strength — a multiplier on the edge loss. Costs no
+  CPU, only changes the sound.
 
-## V-1.5.0 — 4 сентября 2026
+## V-1.5.0 — 4 September 2026
 
-* **Стены протекали.** Проверка видимости источника стартовала ровно на грани
-  блока, `floor()` попадал внутрь самой стены, и первый шаг сетки её
-  перепрыгивал. Преграда толщиной в один блок становилась прозрачной, а
-  отражения приходили сквозь неё полнополосными и громче честного огибания —
-  именно это слышалось как «звук идёт через стену».
-* **Новое: проход звука сквозь преграду.** Таблица звукоизоляции материалов до
-  сих пор не использовалась нигде. Теперь стена честно пропускает часть звука
-  по закону массы (+6 дБ на удвоение толщины): камень даёт 54 дБ потерь и один
-  глухой бубнёж, шерсть — 9.7 дБ и пропускает почти всё.
-* Лава подключена как среда: звук в ней медленный и глухой.
-* Новые настройки: проход сквозь стены и его уровень, дальность расчёта, период
-  пересчёта. Счётчик на экране показывает радиус и период.
-* Документация переписана по факту, добавлены английская версия и лицензия MIT.
+* **Walls leaked.** The source-visibility check started exactly on a block face,
+  `floor()` landed inside the wall itself, and the first grid step skipped that
+  cell. A one-block barrier became transparent, and reflections came through it
+  full-band and louder than honest diffraction — this is what was heard as
+  "sound coming through the wall".
+* **New: transmission through barriers.** The material sound-insulation table
+  had never been used anywhere. A wall now honestly passes part of the sound
+  under the mass law (+6 dB per doubling of thickness): stone costs 54 dB and
+  leaves a dull rumble, wool costs 9.7 dB and lets nearly everything through.
+* Lava wired up as a medium: sound in it is slow and dead.
+* New settings: transmission through walls and its level, simulation range,
+  update interval. The on-screen counter shows radius and interval.
+* Documentation rewritten to match reality; English version and MIT licence
+  added.
 
-## V-1.4.0 — 1 сентября 2026
+## V-1.4.0 — 1 September 2026
 
-* Готовые наборы настроек: «Реалистичный (High)», «Реалистичный (Low)»,
-  «Среднее», «Экономия производительности», «Высокое качество».
+* Presets: Realistic (High), Realistic (Low), Balanced, Performance, High
+  quality.
 
-## V-1.3.4 — 31 августа 2026
+## V-1.3.4 — 31 August 2026
 
-* **Под открытым небом больше нет собора.** Улетевший в небо луч теперь
-  засчитывается как полное поглощение — он ведь не вернётся. Раньше на каменном
-  берегу движок насчитывал время затухания в 12 секунд и заливал всё хвостом.
-* Ограничитель перестал гнуть тихие звуки: до колена сигнал проходит как есть,
-  поджимается только на пиках.
+* **No more cathedral under an open sky.** A ray that escapes upward now counts
+  as total absorption — it is never coming back. On a stone shore the engine
+  used to compute a 12-second decay and drown everything in tail.
+* The limiter stopped bending quiet sounds: below the knee the signal passes
+  through untouched, and only peaks are squeezed.
 
-## V-1.3.3 — 31 августа 2026
+## V-1.3.3 — 31 August 2026
 
-* Лучи считаются в несколько потоков; громкость и настройки подхватываются на
-  ходу.
+* Rays are traced on several threads; volume and settings apply on the fly.
 
-## V-1.3.2 — 31 августа 2026
+## V-1.3.2 — 31 August 2026
 
-* Движок следит, сколько процессора ест сам, и держится в отведённой доле.
+* The engine measures its own CPU cost and stays inside its allotted share.
 
-## V-1.3.1 — 31 августа 2026
+## V-1.3.1 — 31 August 2026
 
-* Числовой стенд: расчёт сверяется со справочниками и формулами, ни звука в
-  динамики. Поиск конфликтующих модов идёт в фоне.
+* Numeric bench: the maths is checked against references and formulas, and never
+  plays a sound. Conflicting-mod scanning moved to the background.
 
-## V-1.3.0 — 31 августа 2026
+## V-1.3.0 — 31 August 2026
 
-* **Новое: звук по самим блокам** — тот, из-за которого слышно соседей за
-  стеной. Приходит раньше воздушного и слышится из стены.
-* Экран со списком модов, которые спорят за звук.
+* **New: structure-borne sound** — the reason you hear the neighbours through a
+  wall. It arrives before the airborne path and is heard from the wall itself.
+* A screen listing mods that compete for sound.
 
-## V-1.2.3 — 31 августа 2026
+## V-1.2.3 — 31 August 2026
 
-* Громкость движка поднимается до 500 %.
+* Engine volume goes up to 500 %.
 
-## V-1.2.2 — 31 августа 2026
+## V-1.2.2 — 31 August 2026
 
-* Починены громкость, тень головы и эхо от листвы.
+* Fixed volume, head shadow and echo off foliage.
 
-## V-1.2.1 — 31 августа 2026
+## V-1.2.1 — 31 August 2026
 
-* Настройки в игре, счётчик нагрузки на экране, среда вокруг слушателя и
-  частичные блоки (плиты, ступеньки, заборы) в акустике.
+* In-game settings, on-screen load counter, the medium around the listener, and
+  partial blocks (slabs, stairs, fences) in the acoustics.
 
-## До V-1.2.1
+## Before V-1.2.1
 
-Каркас мода, перехват звукового движка игры, первая воксельная трассировка:
-огибание преград, отражения с рассеянием, автоподбор качества по процессору.
+Mod scaffold, interception of the game's sound engine, and the first voxel ray
+tracing: diffraction, scattered reflections, CPU-adaptive quality.

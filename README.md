@@ -98,7 +98,7 @@
 
 ## Журнал версий
 
-Что менялось от версии к версии — в [CHANGELOG.md](CHANGELOG.md); там же
+Что менялось от версии к версии — в [CHANGELOG.ru.md](CHANGELOG.ru.md); там же
 объяснено, почему. Сборки лежат в [релизах](https://github.com/MatyanKass/D3SoundMC/releases).
 
 ## Лицензия
