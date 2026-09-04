@@ -17,6 +17,8 @@ public final class Solution {
 	public final float[][] dir = new float[MAX_TAPS][3];
 	public float tailLevel;
 	public boolean directBlocked;
+	/** Насколько плотно перекрыт прямой путь, 0…1. */
+	public float coverage;
 	public float diffractionDb;
 	/** Какой отвод пришёл по конструкции, а не по воздуху; −1, если такого нет. */
 	public int structureTap = -1;
@@ -31,6 +33,7 @@ public final class Solution {
 		tapCount = 0;
 		tailLevel = 0;
 		directBlocked = false;
+		coverage = 0;
 		diffractionDb = 0;
 		structureTap = -1;
 		transmissionTap = -1;
@@ -52,6 +55,7 @@ public final class Solution {
 		tapCount = other.tapCount;
 		tailLevel = other.tailLevel;
 		directBlocked = other.directBlocked;
+		coverage = other.coverage;
 		diffractionDb = other.diffractionDb;
 		structureTap = other.structureTap;
 		transmissionTap = other.transmissionTap;

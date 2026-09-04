@@ -65,6 +65,23 @@ public final class Solver {
 	 */
 	public static final float REFERENCE_DISTANCE = 1.6f;
 
+	/**
+	 * С какого перекрытия путь считается закрытым совсем.
+	 *
+	 * Ниже этого прямой звук ещё идёт, просто тише: сквозь листву, решётку,
+	 * частокол слышно и должно быть слышно. Выше — считаем обход и проход
+	 * сквозь преграду, потому что прямой доли уже практически не осталось.
+	 */
+	private static final float FULLY_BLOCKED = 0.75f;
+
+	/**
+	 * Сколько просачивается сквозь закрытую часть сечения, по полосам.
+	 *
+	 * Дырявая преграда для низа почти прозрачна: длинная волна её просто
+	 * огибает. Верх же ловится каждой веткой и каждым столбиком.
+	 */
+	private static final float[] LEAK = {0.50f, 0.38f, 0.26f, 0.17f, 0.10f, 0.06f, 0.04f};
+
 	/** Дальше этих потерь структурный звук уже неслышен. */
 	private static final float MAX_STRUCTURE_LOSS_DB = 55f;
 
@@ -174,11 +191,20 @@ public final class Solver {
 			float distance = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
 
 			// --- прямой путь или обход
-			boolean blocked = blockedDirect(world, s);
+			float coverage = directCoverage(world, s);
+			boolean blocked = coverage >= FULLY_BLOCKED;
 			solution.directBlocked = blocked;
+			solution.coverage = coverage;
 			if (!blocked) {
+				// путь перекрыт не до конца: свободная доля проходит как есть,
+				// закрытая — только тем, что успевает просочиться, и тем хуже,
+				// чем выше частота. Так листва лишь слегка глушит, а частокол
+				// глушит заметно, и ни то ни другое не пропадает целиком
 				float spread = spread(distance);
-				for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
+				float open = 1f - coverage;
+				for (int b = 0; b < Materials.BAND_COUNT; b++) {
+					bandBuffer[b] = spread * (open + coverage * LEAK[b]);
+				}
 				solution.addTap(distance / c, bandBuffer, (float) dx, (float) dy, (float) dz);
 			} else if (diffraction) {
 				addDiffracted(world, job, s, c, solution);
@@ -287,14 +313,23 @@ public final class Solver {
 		}
 	}
 
-	/** Прямая видимость источника из точки слушателя. */
-	private boolean blockedDirect(VoxelSnapshot world, int s) {
+	/**
+	 * Насколько плотно перекрыт прямой путь к источнику, 0…1.
+	 *
+	 * Раньше здесь был ответ «да/нет» по порогу в половину клетки, и он
+	 * ошибался в обе стороны сразу: каменная ограда занимает лишь треть объёма
+	 * и не перекрывала ничего, хотя поперёк неё не видно, — а листва с её
+	 * пятой частью пропускала звук так, будто её нет. Теперь считается доля
+	 * закрытого сечения, и каждая клетка спрашивается вдоль той оси, по которой
+	 * луч в неё вошёл: плита не мешает идти вбок, но мешает идти сверху вниз.
+	 */
+	private float directCoverage(VoxelSnapshot world, int s) {
 		double lx = world.toLocalX(world.listenerX);
 		double ly = world.toLocalY(world.listenerY);
 		double lz = world.toLocalZ(world.listenerZ);
 		double dx = sxLocal[s] - lx, dy = syLocal[s] - ly, dz = szLocal[s] - lz;
 		double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-		if (dist < 1e-6) return false;
+		if (dist < 1e-6) return 0f;
 		dx /= dist; dy /= dist; dz /= dist;
 
 		int x = (int) Math.floor(lx), y = (int) Math.floor(ly), z = (int) Math.floor(lz);
@@ -307,19 +342,25 @@ public final class Solver {
 		double tmz = (stepZ > 0 ? (z + 1 - lz) : (lz - z)) * tdz;
 
 		double travelled = 0;
+		float open = 1f;
 		for (int guard = 0; guard < 256 && travelled < dist - 0.05; guard++) {
+			int axis;
 			if (tmx < tmy) {
-				if (tmx < tmz) { x += stepX; travelled = tmx; tmx += tdx; }
-				else { z += stepZ; travelled = tmz; tmz += tdz; }
+				if (tmx < tmz) { x += stepX; travelled = tmx; tmx += tdx; axis = 0; }
+				else { z += stepZ; travelled = tmz; tmz += tdz; axis = 2; }
 			} else {
-				if (tmy < tmz) { y += stepY; travelled = tmy; tmy += tdy; }
-				else { z += stepZ; travelled = tmz; tmz += tdz; }
+				if (tmy < tmz) { y += stepY; travelled = tmy; tmy += tdy; axis = 1; }
+				else { z += stepZ; travelled = tmz; tmz += tdz; axis = 2; }
 			}
 			if (travelled >= dist - 0.05) break;
-			if (!world.inside(x, y, z)) return false;
-			if (world.blocking(x, y, z)) return true;
+			if (!world.inside(x, y, z)) return 0f;
+			float cover = world.cover(axis, x, y, z);
+			if (cover <= 0f) continue;
+			// клетки перекрывают путь независимо: свободное сечение перемножается
+			open *= 1f - Math.min(1f, cover);
+			if (open <= 0.001f) return 1f;
 		}
-		return false;
+		return 1f - open;
 	}
 
 	/**

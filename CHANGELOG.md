@@ -5,6 +5,34 @@
 Version format: `1.6.1` — the second digit changes on noticeable engine work,
 the third on small fixes.
 
+## V-1.8.0 — 4 September 2026
+
+* **Streamed sound arrived in pieces, with a click every fraction of a second.**
+  The pump asked the decoder for a chunk of a given size, but `read` returns
+  whatever it got — it finishes the packet it started, usually more than asked.
+  The scratch buffer was fixed-size, so the tail of every chunk was silently
+  dropped, punching a regular hole in the audio. The buffer now grows to fit and
+  nothing is discarded.
+* **Blocks are read as real geometry instead of one number.** A cell used to be
+  described by its filled volume alone, and blocking was a yes/no test at half a
+  cell. That was wrong in both directions at once: a stone wall block fills only
+  about a third of its cell, so it blocked *nothing* — a jukebox behind a wall
+  of them sounded as if you were in the same room — while a slab, at half a
+  cell, blocked sound travelling sideways over it, which it cannot.
+* Each cell now carries how much the block covers it seen along each axis, taken
+  by sampling the real collision shape (cached per block state, so it costs
+  nothing per cell). A ray asks for the axis it entered along: a slab stops
+  sound from above but not from the side, a wall stops it sideways but not from
+  above.
+* Occlusion is continuous rather than binary. Foliage costs about 1.5 dB per
+  layer and stays audible, thickening as the canopy does; a stone wall block
+  costs 17.5 dB across; sound along the face of a slab loses 0.6 dB. Only when
+  the path is 75 % covered does it count as blocked and switch to diffraction
+  and transmission.
+* Blocks taller than their own cell — walls and fences are one and a half — now
+  fill the cell above them. That half block used to vanish, leaving a gap over
+  every fence that does not exist in the world.
+
 ## V-1.7.0 — 4 September 2026
 
 * **Streamed sounds went through vanilla, bypassing all physics.** Anything the

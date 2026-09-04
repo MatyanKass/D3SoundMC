@@ -257,6 +257,11 @@ public final class D3SoundEngine {
 					}
 					ByteBuffer data = open.read(chunkBytes);
 					if (data == null || !data.hasRemaining()) { source.markComplete(); return; }
+					// read отдаёт столько, сколько получилось, а не сколько просили:
+					// декодер дочитывает пакет до конца. Если не растянуть буфер,
+					// хвост каждой порции пропадёт — и звук пойдёт с дырками
+					int available = data.remaining() / bytesPerFrame;
+					if (scratch.length < available) scratch = new float[available];
 					int frames = toMono(data, format, scratch);
 					if (frames <= 0) { source.markComplete(); return; }
 					source.append(scratch, frames);
@@ -430,18 +435,41 @@ public final class D3SoundEngine {
 			for (int lz = 0; lz < size; lz++) {
 				int wz = filling.originZ + lz;
 				for (int lx = 0; lx < size; lx++) {
-					BlockState state = level.getBlockState(pos.set(filling.originX + lx, wy, wz));
+					int wx = filling.originX + lx;
+					BlockState state = level.getBlockState(pos.set(wx, wy, wz));
 					byte id = VoxelSnapshot.AIR;
-					byte fill = 100;
+					byte fill = 100, cx = 100, cy = 100, cz = 100;
 					if (!state.isAir()) {
 						if (state.liquid()) id = (byte) Materials.WATER.ordinal();
 						else if (state.blocksMotion()) {
 							Materials material = materialOf(state.getSoundType());
+							Shape shape = shapeOf(state, level, pos);
+							float d = material.density();
 							id = (byte) material.ordinal();
-							fill = (byte) Math.max(1, Math.round(occupancyOf(state, level, pos) * material.density()));
+							fill = scale(shape.volume(), d);
+							cx = scale(shape.alongX(), d);
+							cy = scale(shape.alongY(), d);
+							cz = scale(shape.alongZ(), d);
 						}
 					}
-					filling.set(lx, fillLayer, lz, id, fill);
+					if (id == VoxelSnapshot.AIR) {
+						// блок снизу может торчать сюда: ограда и забор в полтора
+						// блока высотой, и эта половина раньше просто пропадала
+						BlockState below = level.getBlockState(pos.set(wx, wy - 1, wz));
+						if (!below.isAir() && !below.liquid() && below.blocksMotion()) {
+							Shape shape = shapeOf(below, level, pos);
+							if (shape.upVolume() > 0) {
+								Materials material = materialOf(below.getSoundType());
+								float d = material.density();
+								id = (byte) material.ordinal();
+								fill = scale(shape.upVolume(), d);
+								cx = scale(shape.upX(), d);
+								cy = scale(shape.upY(), d);
+								cz = scale(shape.upZ(), d);
+							}
+						}
+					}
+					filling.set(lx, fillLayer, lz, id, fill, cx, cy, cz);
 				}
 			}
 		}
@@ -460,23 +488,120 @@ public final class D3SoundEngine {
 	}
 
 	/**
-	 * Какую долю клетки занимает блок.
+	 * Как блок закрывает клетку.
 	 *
-	 * Плита — половину, ступенька — три четверти, забор и стекло в раме — лишь
-	 * малую часть. Звук отражается и перекрывается ровно в этой мере, поэтому
-	 * за забором слышно почти как в открытом поле, а за плитой уже нет.
+	 * Одной доли объёма для звука мало. Каменная ограда занимает от силы треть
+	 * клетки, но поперёк неё не видно ничего: она сплошная во всю высоту, и
+	 * горизонтальный звук она держит не хуже целого блока. Плита наоборот —
+	 * половина объёма, но пройти вбок над ней можно свободно, а сверху вниз
+	 * нельзя. Поэтому кроме объёма считаем, какую часть сечения блок закрывает,
+	 * если смотреть вдоль каждой оси.
+	 *
+	 * Поля {@code up*} — то же самое для клетки выше: ограда и забор высотой в
+	 * полтора блока торчат в неё, и без этого над ними оставалась щель, которой
+	 * в мире нет.
 	 */
-	private static byte occupancyOf(BlockState state, Level level, BlockPos pos) {
+	private record Shape(byte volume, byte alongX, byte alongY, byte alongZ,
+	                     byte upVolume, byte upX, byte upY, byte upZ) {}
+
+	private static final Shape FULL_SHAPE = new Shape((byte) 100, (byte) 100, (byte) 100, (byte) 100,
+		(byte) 0, (byte) 0, (byte) 0, (byte) 0);
+	/** Блок без столкновений — трава, цветы: звук их почти не замечает. */
+	private static final Shape THIN_SHAPE = new Shape((byte) 20, (byte) 20, (byte) 20, (byte) 20,
+		(byte) 0, (byte) 0, (byte) 0, (byte) 0);
+
+	/** Разрешение разбора формы: 4×4×4 точки на клетку. */
+	private static final int GRID = 4;
+
+	private final Map<BlockState, Shape> shapeCache = new ConcurrentHashMap<>();
+
+	private static byte scale(byte value, float density) {
+		return (byte) Math.max(1, Math.min(100, Math.round(value * density)));
+	}
+
+	/**
+	 * Разобрать форму блока по точкам.
+	 *
+	 * Считается один раз на состояние блока и запоминается: соединения оград и
+	 * поворот ступеней — тоже часть состояния, так что кэш не врёт, а работы
+	 * выходит на сотню-другую разных блоков вместо сотен тысяч клеток.
+	 */
+	private Shape shapeOf(BlockState state, Level level, BlockPos pos) {
+		Shape cached = shapeCache.get(state);
+		if (cached != null) return cached;
+		Shape computed = measure(state, level, pos);
+		shapeCache.put(state, computed);
+		return computed;
+	}
+
+	private static Shape measure(BlockState state, Level level, BlockPos pos) {
 		try {
-			if (state.isCollisionShapeFullBlock(level, pos)) return 100;
+			if (state.isCollisionShapeFullBlock(level, pos)) return FULL_SHAPE;
 			VoxelShape shape = state.getCollisionShape(level, pos);
-			if (shape.isEmpty()) return 20;
-			AABB box = shape.bounds();
-			double volume = (box.maxX - box.minX) * (box.maxY - box.minY) * (box.maxZ - box.minZ);
-			return (byte) Math.max(5, Math.min(100, Math.round(volume * 100)));
+			if (shape.isEmpty()) return THIN_SHAPE;
+			List<AABB> boxes = shape.toAabbs();
+			if (boxes.isEmpty()) return THIN_SHAPE;
+
+			boolean[] here = new boolean[GRID * GRID * GRID];
+			boolean[] above = new boolean[GRID * GRID * GRID];
+			for (int iy = 0; iy < GRID; iy++) {
+				double y = (iy + 0.5) / GRID;
+				for (int iz = 0; iz < GRID; iz++) {
+					double z = (iz + 0.5) / GRID;
+					for (int ix = 0; ix < GRID; ix++) {
+						double x = (ix + 0.5) / GRID;
+						int at = (iy * GRID + iz) * GRID + ix;
+						here[at] = inside(boxes, x, y, z);
+						above[at] = inside(boxes, x, y + 1, z);
+					}
+				}
+			}
+			return new Shape(
+				volumeOf(here), coverOf(here, 0), coverOf(here, 1), coverOf(here, 2),
+				volumeOf(above), coverOf(above, 0), coverOf(above, 1), coverOf(above, 2));
 		} catch (Throwable ignored) {
-			return 100;
+			// мод может отдать что угодно — считаем блок целым, так безопаснее
+			return FULL_SHAPE;
 		}
+	}
+
+	private static boolean inside(List<AABB> boxes, double x, double y, double z) {
+		for (int i = 0; i < boxes.size(); i++) {
+			AABB box = boxes.get(i);
+			if (x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY
+				&& z >= box.minZ && z <= box.maxZ) return true;
+		}
+		return false;
+	}
+
+	private static byte volumeOf(boolean[] grid) {
+		int count = 0;
+		for (boolean b : grid) if (b) count++;
+		return (byte) Math.round(count * 100f / grid.length);
+	}
+
+	/**
+	 * Какую часть сечения закрывает форма, если смотреть вдоль оси.
+	 *
+	 * Столбик считается закрытым, если на нём есть хоть одна занятая точка:
+	 * звук вдоль этой линии в неё упрётся.
+	 */
+	private static byte coverOf(boolean[] grid, int axis) {
+		int blocked = 0;
+		for (int a = 0; a < GRID; a++) {
+			for (int b = 0; b < GRID; b++) {
+				boolean any = false;
+				for (int t = 0; t < GRID && !any; t++) {
+					int ix, iy, iz;
+					if (axis == 0) { ix = t; iy = a; iz = b; }
+					else if (axis == 1) { ix = a; iy = t; iz = b; }
+					else { ix = a; iy = b; iz = t; }
+					any = grid[(iy * GRID + iz) * GRID + ix];
+				}
+				if (any) blocked++;
+			}
+		}
+		return (byte) Math.round(blocked * 100f / (GRID * GRID));
 	}
 
 	private void submitJob() {

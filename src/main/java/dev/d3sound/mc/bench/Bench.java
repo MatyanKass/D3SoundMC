@@ -29,6 +29,7 @@ public final class Bench {
 		occlusion();
 		structure();
 		outdoor();
+		partialBlocks();
 		throughWall();
 		toggles();
 		budget();
@@ -351,6 +352,72 @@ public final class Bench {
 			}
 		}
 		return world;
+	}
+
+	/* --- неполные блоки: листва, ограда, плита --- */
+
+	private static void partialBlocks() {
+		System.out.println();
+		System.out.println("== неполные блоки ==");
+
+		// листва: пятая часть клетки, звук должен глохнуть чуть-чуть
+		double leaves = directLevel(barrier(Materials.FOLIAGE, 20, 20, 20, 20, 1));
+		double leaves3 = directLevel(barrier(Materials.FOLIAGE, 20, 20, 20, 20, 3));
+		double free = directLevel(barrier(Materials.FOLIAGE, 0, 0, 0, 0, 0));
+		System.out.printf("  открыто %.4f, за листвой %.4f, за тремя слоями %.4f%n", free, leaves, leaves3);
+		expect("сквозь листву слышно", leaves > free * 0.5,
+			String.format("%.1f дБ потерь", 20 * Math.log10(leaves / free)));
+		expect("листва всё же глушит", leaves < free * 0.95,
+			String.format("%.1f дБ потерь", 20 * Math.log10(leaves / free)));
+		expect("чем гуще листва, тем глуше", leaves3 < leaves,
+			String.format("%.1f против %.1f дБ", 20 * Math.log10(leaves3 / free), 20 * Math.log10(leaves / free)));
+
+		// каменная ограда: объёма треть, но поперёк неё сплошная стена
+		double fence = directLevel(barrier(Materials.STONE, 35, 95, 20, 95, 1));
+		System.out.printf("  за каменной оградой %.4f%n", fence);
+		expect("ограда перекрывает звук поперёк себя", fence < free * 0.25,
+			String.format("%.1f дБ потерь", 20 * Math.log10(Math.max(1e-9, fence) / free)));
+		expect("ограда глушит сильнее листвы", fence < leaves,
+			String.format("%.4f против %.4f", fence, leaves));
+
+		// плита: сверху вниз не пройти, а вбок над ней — сколько угодно
+		double slabSide = directLevel(barrier(Materials.STONE, 50, 8, 100, 8, 1));
+		System.out.printf("  вдоль плиты %.4f%n", slabSide);
+		expect("вдоль плиты звук идёт свободно", slabSide > free * 0.85,
+			String.format("%.1f дБ потерь", 20 * Math.log10(slabSide / free)));
+	}
+
+	/**
+	 * Коридор вдоль оси X: слушатель в центре, источник за преградой из
+	 * заданного числа слоёв. Перекрытие у преграды задаётся по осям отдельно.
+	 */
+	private static VoxelSnapshot barrier(Materials material, int volume, int alongX, int alongY, int alongZ, int layers) {
+		int radius = 12;
+		VoxelSnapshot world = new VoxelSnapshot(radius);
+		world.setOrigin(0.5, 0.5, 0.5);
+		int c = radius;
+		for (int x = 0; x < world.size; x++) {
+			for (int y = 0; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) world.set(x, y, z, VoxelSnapshot.AIR, (byte) 0);
+			}
+		}
+		for (int n = 0; n < layers; n++) {
+			for (int y = 0; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) {
+					world.set(c + 2 + n, y, z, (byte) material.ordinal(), (byte) volume,
+						(byte) alongX, (byte) alongY, (byte) alongZ);
+				}
+			}
+		}
+		return world;
+	}
+
+	/** Уровень прямого (нулевого) отвода; отражения и прочее выключены. */
+	private static double directLevel(VoxelSnapshot world) {
+		Solution s = solveFull(world, world.originX + world.radius + 5.5,
+			world.originY + world.radius + 0.5, world.originZ + world.radius + 0.5,
+			false, false, false, false, false);
+		return s.tapCount == 0 ? 0 : energy(s, 0);
 	}
 
 	/* --- за стенкой: огибание, проход насквозь и герметичность стен --- */

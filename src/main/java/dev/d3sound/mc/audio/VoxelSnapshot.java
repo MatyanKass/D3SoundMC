@@ -18,6 +18,17 @@ public final class VoxelSnapshot {
 	private final byte[] cells;
 	/** Доля объёма клетки, занятая блоком: 0…100. Плита — 50, забор — около 10. */
 	private final byte[] fills;
+	/**
+	 * Насколько блок закрывает клетку, если смотреть вдоль каждой оси: 0…100.
+	 *
+	 * Одной доли объёма для звука мало. Каменная ограда занимает от силы треть
+	 * клетки, но поперёк неё не видно ничего — она сплошная во всю высоту, и
+	 * горизонтальный звук она перекрывает так же, как целый блок. Наоборот,
+	 * плита занимает половину объёма, но сверху вниз сквозь неё не пройти, а
+	 * вбок над ней — сколько угодно. Поэтому храним три проекции, и луч
+	 * спрашивает ту, вдоль которой идёт.
+	 */
+	private final byte[] coverX, coverY, coverZ;
 
 	/** Мировые координаты угла куба. */
 	public int originX, originY, originZ;
@@ -29,6 +40,9 @@ public final class VoxelSnapshot {
 		this.size = radius * 2;
 		this.cells = new byte[size * size * size];
 		this.fills = new byte[size * size * size];
+		this.coverX = new byte[size * size * size];
+		this.coverY = new byte[size * size * size];
+		this.coverZ = new byte[size * size * size];
 	}
 
 	public void setOrigin(double lx, double ly, double lz) {
@@ -63,9 +77,19 @@ public final class VoxelSnapshot {
 
 	/** Материал и доля занятого объёма — от неё зависит, пройдёт ли звук мимо. */
 	public void set(int lx, int ly, int lz, byte material, byte fillPercent) {
+		set(lx, ly, lz, material, fillPercent, fillPercent, fillPercent, fillPercent);
+	}
+
+	/** То же, но с отдельным перекрытием по каждой оси. */
+	public void set(int lx, int ly, int lz, byte material, byte fillPercent,
+	                byte alongX, byte alongY, byte alongZ) {
 		int i = index(lx, ly, lz);
 		cells[i] = material;
-		fills[i] = material == AIR ? 0 : fillPercent;
+		boolean air = material == AIR;
+		fills[i] = air ? 0 : fillPercent;
+		coverX[i] = air ? 0 : alongX;
+		coverY[i] = air ? 0 : alongY;
+		coverZ[i] = air ? 0 : alongZ;
 	}
 
 	/** Насколько плотно клетка занята, 0…1. */
@@ -75,12 +99,31 @@ public final class VoxelSnapshot {
 	}
 
 	/**
+	 * Какую часть клетки блок закрывает для луча, идущего вдоль оси.
+	 *
+	 * @param axis 0 — вдоль X, 1 — вдоль Y, 2 — вдоль Z
+	 */
+	public float cover(int axis, int lx, int ly, int lz) {
+		if (!inside(lx, ly, lz)) return 0f;
+		int i = index(lx, ly, lz);
+		byte value = axis == 0 ? coverX[i] : axis == 1 ? coverY[i] : coverZ[i];
+		return value / 100f;
+	}
+
+	/** Самое сильное перекрытие из трёх — им пользуются, когда направление неважно. */
+	public float cover(int lx, int ly, int lz) {
+		if (!inside(lx, ly, lz)) return 0f;
+		int i = index(lx, ly, lz);
+		return Math.max(coverX[i], Math.max(coverY[i], coverZ[i])) / 100f;
+	}
+
+	/**
 	 * Считать ли клетку преградой для прямого звука.
 	 *
 	 * Плита и ступень перекрывают путь, а забор или решётка — нет: звук
 	 * проходит между прутьями, теряя разве что немного верха.
 	 */
-	public boolean blocking(int lx, int ly, int lz) { return fill(lx, ly, lz) >= 0.5f; }
+	public boolean blocking(int lx, int ly, int lz) { return cover(lx, ly, lz) >= 0.5f; }
 
 	public boolean solid(int lx, int ly, int lz) { return local(lx, ly, lz) != AIR; }
 
