@@ -66,6 +66,22 @@ public final class Bench {
 		check("затухание 8 кГц", a.dbPerMeter(6) * 1000, 105.0, 15.0, "дБ/км");
 
 		check("скорость в воде", Air.WATER.speedOfSound, 1484, 1, "м/с");
+		// под водой глушит не среда, а ухо: канал залит, согласования нет
+		double earLow = Math.pow(10, -Air.SUBMERGED_EAR_DB[0] / 20);
+		double earHigh = Math.pow(10, -Air.SUBMERGED_EAR_DB[6] / 20);
+		System.out.printf("  ухо под водой: низ %.2f, верх %.3f%n", earLow, earHigh);
+		expect("под водой низ доходит до уха", earLow > 0.5,
+			String.format("%.0f%% амплитуды", earLow * 100));
+		expect("под водой верха почти не остаётся", earHigh < 0.05,
+			String.format("%.1f%% амплитуды", earHigh * 100));
+		boolean rising = true;
+		for (int b = 1; b < Materials.BAND_COUNT; b++) {
+			if (Air.SUBMERGED_EAR_DB[b] <= Air.SUBMERGED_EAR_DB[b - 1]) rising = false;
+			if (Air.MOLTEN_EAR_DB[b] <= Air.MOLTEN_EAR_DB[b - 1]) rising = false;
+		}
+		expect("чем выше частота, тем сильнее глушит", rising, "монотонно");
+		expect("в лаве глуше, чем в воде", Air.MOLTEN_EAR_DB[3] > Air.SUBMERGED_EAR_DB[3],
+			String.format("%.0f против %.0f дБ", Air.MOLTEN_EAR_DB[3], Air.SUBMERGED_EAR_DB[3]));
 		expect("вода почти не гасит низ", Air.WATER.dbPerMeter(0) * 100 < 0.01,
 			String.format("%.5f дБ/100 м", Air.WATER.dbPerMeter(0) * 100));
 		expect("в Нижнем мире звук быстрее", Air.nether().speedOfSound > a.speedOfSound + 20,

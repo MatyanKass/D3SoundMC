@@ -22,6 +22,16 @@ the third on small fixes.
   is the low pressure rumble; lava is stronger still; indoors they pick up the
   same tail as everything else, and out in the open there is none. New setting,
   0 % hands them back to the game untouched.
+* **Underwater everything still sounded dry and direct.** The medium was
+  modelled correctly — water barely absorbs sound, it carries it further than
+  air does — but the listener was not. What muffles sound underwater is not the
+  water, it is your ear: the canal is flooded, the impedance match the middle
+  ear exists for stops working, and what reaches the eardrum is mostly what the
+  skull conducts, which is bass. That colouring was applied to music only; now
+  it applies to every sound while your head is under, lava included.
+* **Toggles showed no on/off state and did not switch.** They are now our own
+  buttons rather than the game's option widget, captioned the vanilla way, so
+  the state is visible and a click always lands.
 * Music is no longer dropped when the world is noisy: the source limit counts
   only sounds that occupy geometry.
 

@@ -10,6 +10,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.OptionsSubScreen;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.util.List;
@@ -33,12 +34,12 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 	protected void addOptions() {
 		if (this.list == null) return;
 
-		this.list.addBig(toggle("d3sound.options.enabled", config.enabled, value -> {
+		this.list.addSmall(toggle("d3sound.options.enabled", config.enabled, value -> {
 			config.enabled = value;
 			D3SoundEngine engine = D3SoundEngine.get();
 			engine.enabled = value;
 			if (!value) engine.stopAll();
-		}));
+		}), null);
 
 		addPresets();
 
@@ -47,21 +48,25 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			percent("d3sound.options.headroom", 40, 100, config.cpuHeadroom, value -> config.cpuHeadroom = value, false),
 			percent("d3sound.options.quality", 0, 100, config.quality, value -> config.quality = value, true),
 			percent("d3sound.options.gain", 0, 500, config.gain, value -> config.gain = value, false),
-			toggle("d3sound.options.diffraction", config.diffraction, value -> config.diffraction = value),
 			percent("d3sound.options.diffraction_level", 0, 300, config.diffractionLevel, value -> config.diffractionLevel = value, false),
-			toggle("d3sound.options.reflections", config.reflections, value -> config.reflections = value),
-			toggle("d3sound.options.structure", config.structure, value -> config.structure = value),
 			percent("d3sound.options.structure_level", 0, 300, config.structureLevel, value -> config.structureLevel = value, false),
-			toggle("d3sound.options.transmission", config.transmission, value -> config.transmission = value),
 			percent("d3sound.options.transmission_level", 0, 300, config.transmissionLevel, value -> config.transmissionLevel = value, false),
 			amount("d3sound.options.range", 0, 64, config.range, value -> config.range = value, "d3sound.options.value.blocks"),
 			amount("d3sound.options.update", 0, 400, config.updateMs, value -> config.updateMs = value, "d3sound.options.value.ms"),
 			amount("d3sound.options.sources", 0, 24, config.maxSources, value -> config.maxSources = value, "d3sound.options.value.count"),
 			percent("d3sound.options.local", 0, 200, config.localAmbience, value -> config.localAmbience = value, false),
 			percent("d3sound.options.reverb", 0, 200, config.reverb, value -> config.reverb = value, true),
-			percent("d3sound.options.doppler", 0, 200, config.doppler, value -> config.doppler = value, false),
-			toggle("d3sound.options.overlay", config.overlay, value -> config.overlay = value)
+			percent("d3sound.options.doppler", 0, 200, config.doppler, value -> config.doppler = value, false)
 		);
+
+		this.list.addSmall(
+			toggle("d3sound.options.diffraction", config.diffraction, value -> config.diffraction = value),
+			toggle("d3sound.options.reflections", config.reflections, value -> config.reflections = value));
+		this.list.addSmall(
+			toggle("d3sound.options.structure", config.structure, value -> config.structure = value),
+			toggle("d3sound.options.transmission", config.transmission, value -> config.transmission = value));
+		this.list.addSmall(
+			toggle("d3sound.options.overlay", config.overlay, value -> config.overlay = value), null);
 
 		List<Conflicts.Found> conflicts = Conflicts.result();
 		this.list.addSmall(Button.builder(
@@ -105,9 +110,21 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 		return button;
 	}
 
-	/** Переключатель с пояснением: ключ подсказки — это ключ пункта плюс {@code .tip}. */
-	private static OptionInstance<Boolean> toggle(String key, boolean current, java.util.function.Consumer<Boolean> sink) {
-		return OptionInstance.createBoolean(key, tip(key), current, sink::accept);
+	/**
+	 * Переключатель.
+	 *
+	 * Своя кнопка, а не {@code OptionInstance}: у стандартного переключателя в
+	 * этой версии игры состояние не отображалось и щелчок не проходил. Здесь
+	 * всё под нашим контролем — подпись собирается тем же способом, что у самой
+	 * игры, поэтому выглядит и переводится он как ванильный.
+	 */
+	private Button toggle(String key, boolean current, java.util.function.Consumer<Boolean> sink) {
+		Component label = CommonComponents.optionStatus(Component.translatable(key), current);
+		return Button.builder(label, b -> {
+			sink.accept(!current);
+			config.save();
+			this.rebuildWidgets();
+		}).tooltip(Tooltip.create(Component.translatable(key + ".tip"))).build();
 	}
 
 	/** Ползунок в процентах; при autoAtZero крайнее левое значение — «Авто». */

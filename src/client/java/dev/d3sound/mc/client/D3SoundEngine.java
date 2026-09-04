@@ -745,6 +745,16 @@ public final class D3SoundEngine {
 					}
 				}
 
+				// голова в воде или лаве: глушит не среда, а само ухо, поэтому
+				// это касается любого звука — и того, что рождён рядом с вами
+				// в той же воде, а не только пришедшего сверху
+				float[] colour = submergedColour();
+				if (colour != null) {
+					for (int b = 0; b < Materials.BAND_COUNT; b++) {
+						bandBuffer[b] *= (float) Math.pow(10.0, -colour[b] / 20.0);
+					}
+				}
+
 				Binaural.toListenerFrame(dx, dy, dz, mixer.listenerYaw, mixer.listenerPitch, dirBuffer);
 				binaural.compute(dirBuffer, distance, mixer.air, bandBuffer, ears);
 
@@ -765,16 +775,12 @@ public final class D3SoundEngine {
 	/** Насколько сильно среда красит местные звуки. 0 — отдать их игре как есть. */
 	private volatile float localAmount = 1f;
 
-	/**
-	 * Под водой у местных звуков глохнет верх, дБ по полосам.
-	 *
-	 * Голова в воде: до барабанной перепонки высокие частоты почти не доходят,
-	 * остаётся низ и ощущение давления. Ровно поэтому под водой музыка звучит
-	 * так, будто играет за стеной.
-	 */
-	private static final float[] SUBMERGED_DB = {1f, 2f, 4f, 7f, 12f, 18f, 24f};
-	/** То же в лаве, только сильнее: среда вязкая и горячая. */
-	private static final float[] MOLTEN_DB = {2f, 4f, 8f, 13f, 20f, 28f, 36f};
+	/** Что среда делает со звуком по дороге в ухо; {@code null} — ничего. */
+	private float[] submergedColour() {
+		if (listenerInLava) return Air.MOLTEN_EAR_DB;
+		if (listenerUnderwater) return Air.SUBMERGED_EAR_DB;
+		return null;
+	}
 
 	/**
 	 * Местный звук: музыка, эмбиент, всё, что звучит «в голове».
@@ -787,7 +793,7 @@ public final class D3SoundEngine {
 	 */
 	private void applyLocal(Source source) {
 		float amount = localAmount;
-		float[] colour = listenerInLava ? MOLTEN_DB : (listenerUnderwater ? SUBMERGED_DB : null);
+		float[] colour = submergedColour();
 		for (int b = 0; b < Materials.BAND_COUNT; b++) {
 			bandBuffer[b] = colour == null ? 1f
 				: (float) Math.pow(10.0, -(colour[b] * amount) / 20.0);
@@ -824,7 +830,11 @@ public final class D3SoundEngine {
 		double dz = source.z - mixer.listenerZ;
 		float distance = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
 		float spread = Solver.spread(distance);
-		for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
+		float[] colour = submergedColour();
+		for (int b = 0; b < Materials.BAND_COUNT; b++) {
+			bandBuffer[b] = colour == null ? spread
+				: spread * (float) Math.pow(10.0, -colour[b] / 20.0);
+		}
 
 		Binaural.toListenerFrame(dx, dy, dz, mixer.listenerYaw, mixer.listenerPitch, dirBuffer);
 		binaural.compute(dirBuffer, distance, mixer.air, bandBuffer, ears);
