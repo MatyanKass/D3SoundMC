@@ -265,6 +265,8 @@ public final class D3SoundEngine {
 		budget.transmissionGain = config.transmissionLevel / 100f;
 		budget.manualRadius = config.range;
 		budget.manualIntervalMs = config.updateMs;
+		budget.manualSources = config.maxSources;
+		budget.diffractionGain = config.diffractionLevel / 100f;
 		binaural.delayScale = Math.max(0f, config.doppler / 100f);
 		mixer.setMasterGain(config.gain / 100f);
 	}
@@ -366,7 +368,17 @@ public final class D3SoundEngine {
 
 		List<Source> list = new ArrayList<>(playing.values());
 		list.removeIf(s -> s.finished || !snapshot.covers(s.x, s.y, s.z));
-		if (list.size() > Tracer.MAX_SOURCES) list = list.subList(0, Tracer.MAX_SOURCES);
+		int limit = Math.min(Tracer.MAX_SOURCES, budget.sources());
+		if (list.size() > limit) {
+			// считать честно всё сразу дорого, поэтому лишнее отбрасываем — но
+			// не первое попавшееся, а самое далёкое: близкий звук важнее
+			double lx = mixer.listenerX, ly = mixer.listenerY, lz = mixer.listenerZ;
+			list.sort(java.util.Comparator.comparingDouble(s -> {
+				double dx = s.x - lx, dy = s.y - ly, dz = s.z - lz;
+				return dx * dx + dy * dy + dz * dz;
+			}));
+			list = new ArrayList<>(list.subList(0, limit));
+		}
 		final List<Source> sources = list;
 		final float speed = mixer.air.speedOfSound;
 

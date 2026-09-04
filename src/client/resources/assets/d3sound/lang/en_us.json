@@ -60,5 +60,10 @@
   "d3sound.options.range": "Simulation range",
   "d3sound.options.range.tip": "Radius of the block cube the engine samples around you and computes all acoustics from. This is the costliest setting after rays: volume grows as the cube, so twice the radius is eight times the snapshot. A smaller radius drops distant walls out of the echo. Auto picks by quality, usually 14–32.",
   "d3sound.options.update": "Update interval",
-  "d3sound.options.update.tip": "How often the acoustics are recomputed. Rarer is cheaper, but when you move fast the picture lags: sound keeps arriving from where you no longer are. More often is more accurate and more expensive. Auto picks by quality, usually 70–260 ms."
+  "d3sound.options.update.tip": "How often the acoustics are recomputed. Rarer is cheaper, but when you move fast the picture lags: sound keeps arriving from where you no longer are. More often is more accurate and more expensive. Auto picks by quality, usually 70–260 ms.",
+  "d3sound.options.value.count": "%s: %s",
+  "d3sound.options.diffraction_level": "Diffraction strength",
+  "d3sound.options.diffraction_level.tip": "How dearly sound pays to bend around an obstacle. 100 % follows Maekawa, as in real life: around a corner it is muffled but audible. Higher makes corners noticeably quieter and duller; lower lets sound bend more readily than it should. Costs nothing in CPU — it only changes the sound.",
+  "d3sound.options.sources": "Sources simulated",
+  "d3sound.options.sources.tip": "How many sounds get the full physics at once. Each source is a separate energy deposit at every bounce of every ray, so the cost grows in direct proportion. The rest fall back to simple handling, and it is always the most distant that are dropped — nearby sound matters more. Auto picks by quality, usually 6–24."
 }

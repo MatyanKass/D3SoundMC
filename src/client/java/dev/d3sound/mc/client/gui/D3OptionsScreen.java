@@ -48,6 +48,7 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			percent("d3sound.options.quality", 0, 100, config.quality, value -> config.quality = value, true),
 			percent("d3sound.options.gain", 0, 500, config.gain, value -> config.gain = value, false),
 			toggle("d3sound.options.diffraction", config.diffraction, value -> config.diffraction = value),
+			percent("d3sound.options.diffraction_level", 0, 300, config.diffractionLevel, value -> config.diffractionLevel = value, false),
 			toggle("d3sound.options.reflections", config.reflections, value -> config.reflections = value),
 			toggle("d3sound.options.structure", config.structure, value -> config.structure = value),
 			percent("d3sound.options.structure_level", 0, 300, config.structureLevel, value -> config.structureLevel = value, false),
@@ -55,6 +56,7 @@ public final class D3OptionsScreen extends OptionsSubScreen {
 			percent("d3sound.options.transmission_level", 0, 300, config.transmissionLevel, value -> config.transmissionLevel = value, false),
 			amount("d3sound.options.range", 0, 64, config.range, value -> config.range = value, "d3sound.options.value.blocks"),
 			amount("d3sound.options.update", 0, 400, config.updateMs, value -> config.updateMs = value, "d3sound.options.value.ms"),
+			amount("d3sound.options.sources", 0, 24, config.maxSources, value -> config.maxSources = value, "d3sound.options.value.count"),
 			percent("d3sound.options.reverb", 0, 200, config.reverb, value -> config.reverb = value, true),
 			percent("d3sound.options.doppler", 0, 200, config.doppler, value -> config.doppler = value, false),
 			toggle("d3sound.options.overlay", config.overlay, value -> config.overlay = value)

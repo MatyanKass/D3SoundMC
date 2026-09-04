@@ -397,8 +397,44 @@ public final class Bench {
 
 		Solution off = solveFull(wool, wool.originX + 25.5, wool.originY + 20.5, wool.originZ + 20.5,
 			false, true, true, true, false);
+		diffractionStrength(stone, stone.originX + 25.5, stone.originY + 20.5, stone.originZ + 20.5);
+
 		expect("проход сквозь стену выключается", off.transmissionTap < 0 && soft.transmissionTap >= 0,
 			"отвод " + soft.transmissionTap);
+	}
+
+	/** Сила огибания: множитель потерь на кромке должен слышимо менять уровень. */
+	private static void diffractionStrength(VoxelSnapshot world, double sx, double sy, double sz) {
+		Solution normal = solveTuned(world, sx, sy, sz, 1f);
+		Solution strong = solveTuned(world, sx, sy, sz, 2f);
+		double a = energy(normal, 0), b = energy(strong, 0);
+		System.out.printf("  огибание: 100%% → %.5f, 200%% → %.5f%n", a, b);
+		expect("усиленное огибание глушит звук за преградой", b < a,
+			String.format("%.1f дБ разницы", 20 * Math.log10(Math.max(1e-9, b) / Math.max(1e-9, a))));
+	}
+
+	private static Solution solveTuned(VoxelSnapshot world, double sxw, double syw, double szw, float diffractionGain) {
+		Budget budget = new Budget();
+		budget.manualQuality = 0.5f;
+		budget.transmission = false;      // мерим именно огибание
+		budget.structure = false;
+		budget.reflections = false;
+		budget.diffractionGain = diffractionGain;
+		budget.update(1f);
+		Solver solver = new Solver(budget, world.size);
+		Solver.Job job = new Solver.Job() {
+			public VoxelSnapshot snapshot() { return world; }
+			public int sourceCount() { return 1; }
+			public long sourceId(int i) { return 11L; }
+			public double sourceX(int i) { return sxw; }
+			public double sourceY(int i) { return syw; }
+			public double sourceZ(int i) { return szw; }
+			public boolean sourceImpact(int i) { return false; }
+			public float speedOfSound() { return 343f; }
+		};
+		solver.solveNow(job);
+		Solution solution = solver.solutionFor(11L);
+		return solution == null ? new Solution() : solution;
 	}
 
 	/** Каменная коробка 5×5 без крыши в чистом поле; слушатель снаружи у стены. */
@@ -489,6 +525,13 @@ public final class Bench {
 		expect("невменяемые значения зажимаются",
 			manual.radius() <= 64 && manual.intervalMs() >= 20,
 			manual.radius() + " блоков, " + manual.intervalMs() + " мс");
+		manual.manualSources = 4;
+		expect("ручное число источников перебивает авто", manual.sources() == 4,
+			manual.sources() + " шт");
+		manual.manualSources = 500;
+		expect("больше, чем движок умеет, не запросить", manual.sources() <= Tracer.MAX_SOURCES,
+			manual.sources() + " шт");
+
 		Budget auto = new Budget();
 		expect("ноль означает авто", auto.radius() >= 14 && auto.radius() <= 32,
 			auto.radius() + " блоков");

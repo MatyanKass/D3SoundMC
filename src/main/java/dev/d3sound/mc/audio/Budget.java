@@ -58,6 +58,15 @@ public final class Budget {
 	public volatile int manualRadius = 0;
 	/** Период пересчёта, мс; 0 — подбирать по качеству. */
 	public volatile int manualIntervalMs = 0;
+	/** Сколько источников считать честно; 0 — подбирать по качеству. */
+	public volatile int manualSources = 0;
+	/**
+	 * Множитель потерь на кромке преграды.
+	 *
+	 * 1 — как в жизни. Больше — из-за угла глуше, меньше — звук огибает
+	 * преграды охотнее, чем следовало бы.
+	 */
+	public volatile float diffractionGain = 1f;
 
 	/** Текущее качество 0…1. */
 	private float quality = 0.35f;
@@ -161,6 +170,17 @@ public final class Budget {
 	public int intervalMs() {
 		if (manualIntervalMs > 0) return Math.max(20, Math.min(500, manualIntervalMs));
 		return Math.round(lerp(260, 70, quality));
+	}
+
+	/**
+	 * Сколько источников считать честно.
+	 *
+	 * Остальные идут упрощённо, без геометрии. Каждый источник — это отдельный
+	 * сбор энергии на каждом отскоке каждого луча, так что цена растёт линейно.
+	 */
+	public int sources() {
+		if (manualSources > 0) return Math.max(1, Math.min(Tracer.MAX_SOURCES, manualSources));
+		return Math.round(lerp(6, Tracer.MAX_SOURCES, quality));
 	}
 
 	/** Радиус снимка мира, блоков. */

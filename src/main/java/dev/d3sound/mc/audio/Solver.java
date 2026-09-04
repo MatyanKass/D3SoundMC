@@ -358,7 +358,7 @@ public final class Solver {
 		float spread = spread(pathLength);
 		float sum = 0;
 		for (int b = 0; b < Materials.BAND_COUNT; b++) {
-			float att = Paths.maekawaDb(delta, Materials.BANDS[b], c);
+			float att = Paths.maekawaDb(delta, Materials.BANDS[b], c) * budget.diffractionGain;
 			bandBuffer[b] = spread * (float) Math.pow(10.0, -att / 20.0);
 			sum += att;
 		}
