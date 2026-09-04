@@ -80,7 +80,18 @@ public final class Solver {
 	 * Дырявая преграда для низа почти прозрачна: длинная волна её просто
 	 * огибает. Верх же ловится каждой веткой и каждым столбиком.
 	 */
-	private static final float[] LEAK = {0.50f, 0.38f, 0.26f, 0.17f, 0.10f, 0.06f, 0.04f};
+	public static final float[] LEAK = {0.50f, 0.38f, 0.26f, 0.17f, 0.10f, 0.06f, 0.04f};
+
+	/**
+	 * Множитель прямого пути при частичном перекрытии.
+	 *
+	 * Свободная доля сечения проходит как есть, закрытая — только тем, что
+	 * успевает просочиться, и тем хуже, чем выше частота. Вынесено наружу,
+	 * чтобы игровой поток мог пересчитать то же самое по свежему перекрытию.
+	 */
+	public static float directFactor(float coverage, int band) {
+		return (1 - coverage) + coverage * LEAK[band];
+	}
 
 	/** Дальше этих потерь структурный звук уже неслышен. */
 	private static final float MAX_STRUCTURE_LOSS_DB = 55f;
@@ -94,6 +105,12 @@ public final class Solver {
 
 	public void start() {
 		if (running) return;
+		// stop() уже сбросил running и обнулил ссылку, но старый поток мог ещё
+		// доделывать solve(); дождёмся его, иначе решателей окажется два
+		Thread previous = thread;
+		if (previous != null && previous.isAlive()) {
+			try { previous.join(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+		}
 		running = true;
 		thread = new Thread(this::loop, "D3Sound-solver");
 		thread.setDaemon(true);
@@ -104,7 +121,7 @@ public final class Solver {
 	public void stop() {
 		running = false;
 		if (thread != null) thread.interrupt();
-		thread = null;
+		// ссылку не теряем: следующий start() по ней дождётся, пока поток выйдет
 		if (pool != null) { pool.shutdownNow(); pool = null; }
 		solutions.clear();
 	}
@@ -196,14 +213,11 @@ public final class Solver {
 			solution.directBlocked = blocked;
 			solution.coverage = coverage;
 			if (!blocked) {
-				// путь перекрыт не до конца: свободная доля проходит как есть,
-				// закрытая — только тем, что успевает просочиться, и тем хуже,
-				// чем выше частота. Так листва лишь слегка глушит, а частокол
-				// глушит заметно, и ни то ни другое не пропадает целиком
+				// путь перекрыт не до конца: так листва лишь слегка глушит,
+				// а частокол глушит заметно, и ни то ни другое не пропадает целиком
 				float spread = spread(distance);
-				float open = 1f - coverage;
 				for (int b = 0; b < Materials.BAND_COUNT; b++) {
-					bandBuffer[b] = spread * (open + coverage * LEAK[b]);
+					bandBuffer[b] = spread * directFactor(coverage, b);
 				}
 				solution.addTap(distance / c, bandBuffer, (float) dx, (float) dy, (float) dz);
 			} else if (diffraction) {
@@ -333,6 +347,11 @@ public final class Solver {
 		dx /= dist; dy /= dist; dz /= dist;
 
 		int x = (int) Math.floor(lx), y = (int) Math.floor(ly), z = (int) Math.floor(lz);
+		// клетки, в которых стоят сам источник и сам слушатель, преградой не
+		// считаются: сундук, печь, дверь и нотный блок звучат из центра своего
+		// блока, и без этого они были бы «перекрыты сами собой»
+		final int hx = x, hy = y, hz = z;
+		final int ex = (int) Math.floor(sxLocal[s]), ey = (int) Math.floor(syLocal[s]), ez = (int) Math.floor(szLocal[s]);
 		int stepX = dx > 0 ? 1 : -1, stepY = dy > 0 ? 1 : -1, stepZ = dz > 0 ? 1 : -1;
 		double tdx = Math.abs(1 / (dx == 0 ? 1e-9 : dx));
 		double tdy = Math.abs(1 / (dy == 0 ? 1e-9 : dy));
@@ -354,6 +373,9 @@ public final class Solver {
 			}
 			if (travelled >= dist - 0.05) break;
 			if (!world.inside(x, y, z)) return 0f;
+			if ((x == ex && y == ey && z == ez) || (x == hx && y == hy && z == hz)) continue;
+			// вода прямому пути не мешает — сквозь неё слышно
+			if (world.water(x, y, z)) continue;
 			float cover = world.cover(axis, x, y, z);
 			if (cover <= 0f) continue;
 			// клетки перекрывают путь независимо: свободное сечение перемножается
@@ -380,7 +402,7 @@ public final class Solver {
 			for (int oy = -1; oy <= 1; oy++) {
 				for (int oz = -1; oz <= 1; oz++) {
 					int x = lx + ox, y = ly + oy, z = lz + oz;
-					if (!world.inside(x, y, z) || world.blocking(x, y, z)) continue;
+					if (!world.inside(x, y, z) || !world.passable(x, y, z)) continue;
 					int i = world.index(x, y, z);
 					float d = paths.distanceAt(i);
 					if (d < best) { best = d; index = i; }
@@ -444,6 +466,8 @@ public final class Solver {
 		float thickness = 0f;
 
 		int x = (int) Math.floor(lx), y = (int) Math.floor(ly), z = (int) Math.floor(lz);
+		final int hx = x, hy = y, hz = z;
+		final int ex = (int) Math.floor(sxLocal[s]), ey = (int) Math.floor(syLocal[s]), ez = (int) Math.floor(szLocal[s]);
 		int stepX = ux > 0 ? 1 : -1, stepY = uy > 0 ? 1 : -1, stepZ = uz > 0 ? 1 : -1;
 		double tdx = Math.abs(1 / (ux == 0 ? 1e-9 : ux));
 		double tdy = Math.abs(1 / (uy == 0 ? 1e-9 : uy));
@@ -463,8 +487,10 @@ public final class Solver {
 			}
 			if (travelled >= dist - 0.05) break;
 			if (!world.inside(x, y, z)) return;
+			// свои клетки источника и слушателя стеной не считаем, вода — не преграда
+			if ((x == ex && y == ey && z == ez) || (x == hx && y == hy && z == hz)) continue;
 			byte id = world.local(x, y, z);
-			if (id == VoxelSnapshot.AIR) continue;
+			if (id == VoxelSnapshot.AIR || id == VoxelSnapshot.WATER) continue;
 			Materials m = Materials.values()[id];
 			float fill = Math.max(0.05f, world.fill(x, y, z));
 			thickness += fill;

@@ -328,6 +328,15 @@ public final class Tracer {
 	/** Шаговый обход сетки до первого непустого блока. */
 	private Ray march(VoxelSnapshot world, double ox, double oy, double oz,
 	                  float dx, float dy, float dz, float maxDistance) {
+		return march(world, ox, oy, oz, dx, dy, dz, maxDistance, false);
+	}
+
+	/**
+	 * @param throughWater пропускать воду насквозь: для проверки видимости она
+	 *                     не преграда, а вот отражаться от неё луч по-прежнему может
+	 */
+	private Ray march(VoxelSnapshot world, double ox, double oy, double oz,
+	                  float dx, float dy, float dz, float maxDistance, boolean throughWater) {
 		ray.material = null;
 		ray.distance = maxDistance;
 
@@ -343,6 +352,7 @@ public final class Tracer {
 		// клетка, из которой луч вышел, тоже может быть непустой: если этого не
 		// заметить, шаг сетки перепрыгнет её и преграда в один блок пропадёт
 		if (world.inside(x, y, z) && world.local(x, y, z) != VoxelSnapshot.AIR
+			&& !(throughWater && world.local(x, y, z) == VoxelSnapshot.WATER)
 			&& nextFloat() <= world.fill(x, y, z)) {
 			ray.material = Materials.values()[world.local(x, y, z)];
 			ray.distance = 0f;
@@ -362,6 +372,7 @@ public final class Tracer {
 			}
 			if (!world.inside(x, y, z)) break;
 			byte id = world.local(x, y, z);
+			if (throughWater && id == VoxelSnapshot.WATER) continue;
 			// частичный блок отражает не весь луч: доля проходит мимо него насквозь.
 			// Спрашиваем перекрытие вдоль той оси, по которой луч вошёл: мимо плиты
 			// сбоку он пролетит, а сверху упрётся, и наоборот у ограды
@@ -384,7 +395,7 @@ public final class Tracer {
 		double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 		if (dist < 1e-6) return false;
 		dx /= dist; dy /= dist; dz /= dist;
-		Ray hit = march(world, ax, ay, az, (float) dx, (float) dy, (float) dz, (float) dist);
+		Ray hit = march(world, ax, ay, az, (float) dx, (float) dy, (float) dz, (float) dist, true);
 		return hit.material != null && hit.distance < dist - 1e-3;
 	}
 }

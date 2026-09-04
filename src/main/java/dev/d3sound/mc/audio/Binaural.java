@@ -92,13 +92,16 @@ public final class Binaural {
 
 		double yaw = Math.toRadians(yawDeg);
 		double pitch = Math.toRadians(pitchDeg);
-		// поворот в плоскости XZ: получаем «вправо» и «вперёд»
+		// Конвенция Minecraft: при yaw=0 взгляд в +Z, правая рука в -X,
+		// а pitch>0 — это взгляд вниз. Отсюда и знаки:
+		//   forward = (-sin yaw · cos pitch, -sin pitch, cos yaw · cos pitch)
 		double cy = Math.cos(yaw), sy = Math.sin(yaw);
-		double right = dx * cy - dz * sy;
-		double forward = dx * sy + dz * cy;
+		// h — проекция на горизонтальное «вперёд» до наклона головы
+		double h = -dx * sy + dz * cy;
+		double right = -dx * cy - dz * sy;
 		double cp = Math.cos(pitch), sp = Math.sin(pitch);
-		double up = dy * cp - forward * sp;
-		double fwd = dy * sp + forward * cp;
+		double up = dy * cp + h * sp;
+		double fwd = -dy * sp + h * cp;
 
 		out[0] = (float) right;
 		out[1] = (float) up;

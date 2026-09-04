@@ -36,8 +36,8 @@ public final class Paths {
 	private int grid;
 	private final float[] dist;
 	private final byte[] firstStep;
-	private final int[] heap;
-	private final float[] heapKey;
+	private int[] heap;
+	private float[] heapKey;
 	private int heapSize;
 	private int startIndex = -1;
 
@@ -99,7 +99,7 @@ public final class Paths {
 			for (int n = 0; n < 26; n++) {
 				int nx = lxi + DX[n], ny = lyi + DY[n], nz = lzi + DZ[n];
 				if (!world.inside(nx, ny, nz)) continue;
-				if (world.blocking(nx, ny, nz)) continue;
+				if (!world.passable(nx, ny, nz)) continue;
 				int ni = world.index(nx, ny, nz);
 				float nd = d + COST[n];
 				if (nd >= dist[ni] || nd > maxDistance) continue;
@@ -115,6 +115,12 @@ public final class Paths {
 	/* --- двоичная куча на массивах: без аллокаций в горячем цикле --- */
 
 	private void push(int index, float key) {
+		// ленивое удаление: одна клетка может попасть в кучу несколько раз,
+		// поэтому запаса «по клетке на каждую» не хватает — растём вдвое
+		if (heapSize == heap.length) {
+			heap = Arrays.copyOf(heap, heapSize * 2);
+			heapKey = Arrays.copyOf(heapKey, heapSize * 2);
+		}
 		int i = heapSize++;
 		heap[i] = index;
 		heapKey[i] = key;

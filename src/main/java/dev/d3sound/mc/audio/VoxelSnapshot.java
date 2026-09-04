@@ -12,6 +12,8 @@ package dev.d3sound.mc.audio;
  */
 public final class VoxelSnapshot {
 	public static final byte AIR = -1;
+	/** Материал воды — звук сквозь неё идёт, поэтому у него отдельное место. */
+	public static final byte WATER = (byte) Materials.WATER.ordinal();
 
 	public final int radius;
 	public final int size;
@@ -124,6 +126,20 @@ public final class VoxelSnapshot {
 	 * проходит между прутьями, теряя разве что немного верха.
 	 */
 	public boolean blocking(int lx, int ly, int lz) { return cover(lx, ly, lz) >= 0.5f; }
+
+	/** Вода — это клетка, сквозь которую звук идёт, а не преграда. */
+	public boolean water(int lx, int ly, int lz) { return local(lx, ly, lz) == WATER; }
+
+	/**
+	 * Можно ли пройти сквозь клетку.
+	 *
+	 * Воздух — очевидно; вода — тоже: под водой прямой путь и обход никуда не
+	 * деваются, звук в ней идёт даже лучше, чем в воздухе. Отражаться от
+	 * поверхности воды это не мешает — тем занимается трассировка.
+	 */
+	public boolean passable(int lx, int ly, int lz) {
+		return water(lx, ly, lz) || !blocking(lx, ly, lz);
+	}
 
 	public boolean solid(int lx, int ly, int lz) { return local(lx, ly, lz) != AIR; }
 

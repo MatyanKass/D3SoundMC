@@ -34,6 +34,8 @@ public final class Bench {
 		toggles();
 		budget();
 		coverage();
+		water();
+		insideBlock();
 		streaming();
 		mixer();
 
@@ -118,6 +120,17 @@ public final class Bench {
 		b.compute(new float[]{0, 0, -1}, 5f, air, flat, e);
 		expect("сзади глуше, чем спереди", level(e.gainLeft) < frontL - 0.5,
 			String.format("%.2f дБ", level(e.gainLeft) - frontL));
+
+		// система координат слушателя: конвенция Minecraft
+		float[] f = new float[3];
+		Binaural.toListenerFrame(1, 0, 0, 0f, 0f, f);
+		expect("yaw=0: источник в +X слышен слева", f[0] < 0, String.format("вправо %.2f", f[0]));
+		Binaural.toListenerFrame(0, 0, 1, 0f, 0f, f);
+		check("yaw=0: источник в +Z прямо по курсу", f[2], 1, 1e-5, "");
+		Binaural.toListenerFrame(-1, 0, 0, 90f, 0f, f);
+		check("yaw=90: взгляд на -X, источник там же", f[2], 1, 1e-5, "");
+		Binaural.toListenerFrame(0, -1, 0, 0f, 90f, f);
+		check("pitch=90: смотрим вниз, источник снизу", f[2], 1, 1e-5, "");
 
 		b.delayScale = 2f;
 		b.compute(new float[]{0, 0, 1}, 34.3f, air, flat, e);
@@ -676,6 +689,62 @@ public final class Bench {
 		expect("воздух не перекрывает ничего",
 			world.cover(0, 4, 4, 4) == 0 && world.cover(1, 4, 4, 4) == 0 && world.cover(2, 4, 4, 4) == 0,
 			"чисто");
+	}
+
+	/* --- вода: сквозь неё слышно --- */
+
+	private static void water() {
+		System.out.println();
+		System.out.println("== вода ==");
+
+		// слушатель в толще воды, источник в четырёх метрах над ним в воздухе
+		int radius = 12;
+		VoxelSnapshot world = new VoxelSnapshot(radius);
+		world.setOrigin(0.5, 0.5, 0.5);
+		int c = radius;
+		for (int x = 0; x < world.size; x++) {
+			for (int y = 0; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) {
+					world.set(x, y, z, y <= c + 1 ? (byte) Materials.WATER.ordinal() : VoxelSnapshot.AIR,
+						(byte) 100);
+				}
+			}
+		}
+		expect("вода проходима для звука", world.passable(c, c, c) && world.water(c, c, c), "проходима");
+		Solution under = solve(world, world.listenerX, world.listenerY + 4, world.listenerZ, false);
+		System.out.printf("  под водой: перекрытие %.2f, отводов %d%n", under.coverage, under.tapCount);
+		expect("под водой прямой путь не перекрыт", !under.directBlocked,
+			String.format("перекрытие %.2f", under.coverage));
+		expect("под водой звук доходит", under.tapCount > 0, under.tapCount + " отводов");
+	}
+
+	/* --- источник внутри своего блока: сундук, печь, нотный блок --- */
+
+	private static void insideBlock() {
+		System.out.println();
+		System.out.println("== источник в своём блоке ==");
+		int radius = 12;
+		VoxelSnapshot world = new VoxelSnapshot(radius);
+		world.setOrigin(0.5, 0.5, 0.5);
+		int c = radius;
+		for (int x = 0; x < world.size; x++) {
+			for (int y = 0; y < world.size; y++) {
+				for (int z = 0; z < world.size; z++) world.set(x, y, z, VoxelSnapshot.AIR, (byte) 0);
+			}
+		}
+		// одинокий каменный блок в трёх метрах — в нём и сидит источник
+		world.set(c + 3, c, c, (byte) Materials.STONE.ordinal(), (byte) 100);
+		Solution s = solve(world, world.listenerX + 3, world.listenerY, world.listenerZ, false);
+		System.out.printf("  сундук в блоке: перекрытие %.2f, отводов %d%n", s.coverage, s.tapCount);
+		expect("свой блок источника не глушит его самого", s.coverage < 0.75f && !s.directBlocked,
+			String.format("перекрытие %.2f", s.coverage));
+
+		// множитель частичного перекрытия доступен снаружи
+		expect("множитель частичного перекрытия считается наружу",
+			Math.abs(Solver.directFactor(0f, 3) - 1f) < 1e-6
+				&& Solver.directFactor(1f, 3) == Solver.LEAK[3]
+				&& Solver.directFactor(0.5f, 6) < Solver.directFactor(0.5f, 0),
+			String.format("%.3f при половине перекрытия", Solver.directFactor(0.5f, 3)));
 	}
 
 	/* --- длинный звук, который подаётся порциями --- */

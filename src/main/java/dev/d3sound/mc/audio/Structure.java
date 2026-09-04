@@ -71,8 +71,8 @@ public final class Structure {
 	private final float[] loss;      // дБ на 500 Гц
 	private final float[] length;    // пройденный путь, м
 	private final int[] seed;        // клетка входа рядом со слушателем
-	private final int[] heap;
-	private final float[] heapKey;
+	private int[] heap;
+	private float[] heapKey;
 	private int heapSize;
 	private boolean ready;
 
@@ -173,6 +173,12 @@ public final class Structure {
 	/* --- двоичная куча на массивах --- */
 
 	private void push(int index, float key) {
+		// ленивое удаление: одна клетка может попасть в кучу несколько раз,
+		// поэтому запаса «по клетке на каждую» не хватает — растём вдвое
+		if (heapSize == heap.length) {
+			heap = Arrays.copyOf(heap, heapSize * 2);
+			heapKey = Arrays.copyOf(heapKey, heapSize * 2);
+		}
 		int i = heapSize++;
 		heap[i] = index;
 		heapKey[i] = key;

@@ -100,6 +100,8 @@ public final class D3SoundEngine {
 	private VoxelSnapshot filling;
 	private VoxelSnapshot ready;
 	private VoxelSnapshot spare;
+	/** Снимок, ушедший в последний прогон решателя: его нельзя пускать под запись. */
+	private VoxelSnapshot submitted;
 	private int fillLayer;
 	private long lastSubmit;
 
@@ -154,17 +156,41 @@ public final class D3SoundEngine {
 		SoundEngineAccessor accessor = (SoundEngineAccessor) engine;
 		accessor.d3sound$soundBuffers().getCompleteBuffer(path).thenAccept(buffer -> {
 			Pcm pcm = decode(buffer);
-			if (pcm == null) { pending.remove(instance); return; }
-			pcmCache.put(path, pcm);
-			// звук могли остановить, пока мы распаковывали
-			if (!pending.remove(instance)) return;
-			start(instance, pcm, volume, pitch, looping);
+			if (pcm != null) { deliver(instance, path, pcm, volume, pitch, looping); return; }
+			// семплы уже уехали в звуковую карту, и из буфера их стёрли: так бывает,
+			// если звук успел прозвучать по-ванильному до перехвата. Читаем сами
+			accessor.d3sound$soundBuffers().getStream(path, false).thenAccept(stream -> {
+				Pcm own = decodeFromStream(stream);
+				if (own == null) { pending.remove(instance); return; }
+				deliver(instance, path, own, volume, pitch, looping);
+			}).exceptionally(error -> {
+				pending.remove(instance);
+				LOG.warn("D3Sound: нет семплов {}: {}", path, error.toString());
+				return null;
+			});
 		}).exceptionally(error -> {
 			pending.remove(instance);
 			LOG.warn("D3Sound: нет семплов {}: {}", path, error.toString());
 			return null;
 		});
 		return true;
+	}
+
+	/**
+	 * Запустить распакованный звук.
+	 *
+	 * Распаковка идёт в чужом потоке, а сам запуск трогает общие буферы и микшер,
+	 * которые каждый тик перебирает игровой поток, — поэтому пуск переносим туда.
+	 * Снятие из {@code pending} тоже делаем уже там: между колбэком и очередью
+	 * игра успевает звук остановить, и проверка снаружи эту остановку потеряет.
+	 */
+	private void deliver(SoundInstance instance, Identifier path, Pcm pcm,
+	                     float volume, float pitch, boolean looping) {
+		pcmCache.put(path, pcm);
+		Minecraft.getInstance().execute(() -> {
+			if (!pending.remove(instance)) return;
+			start(instance, pcm, volume, pitch, looping);
+		});
 	}
 
 	private void start(SoundInstance instance, Pcm pcm, float volume, float pitch, boolean looping) {
@@ -236,27 +262,30 @@ public final class D3SoundEngine {
 		SoundEngineAccessor accessor = (SoundEngineAccessor) engine;
 		// повтор берёт на себя сам поток: он просто не кончается
 		accessor.d3sound$soundBuffers().getStream(path, looping).thenAccept(stream -> {
-			// пока поток открывался, звук могли остановить
-			if (!pending.remove(instance)) {
-				try { stream.close(); } catch (Exception ignored) { }
-				return;
-			}
 			AudioFormat format = stream.getFormat();
 			int rate = (int) format.getSampleRate();
-			Source source = Source.streaming(nextId.getAndIncrement(), instance.getIdentifier().toString(),
-				rate, instance.isRelative(), STREAM_BUFFER_SECONDS);
-			source.x = instance.getX();
-			source.y = instance.getY();
-			source.z = instance.getZ();
-			source.volume = volume;
-			source.pitch = pitch;
-			source.impact = false;
-			applyFallback(source);
-			playing.put(instance, source);
-			mixer.add(source);
-			if (verbose) LOG.info("D3Sound: поток {} на ({}, {}, {})", source.name,
-				(int) source.x, (int) source.y, (int) source.z);
-			pumpStream(stream, source, format);
+			// запуск — на игровой поток: общие буферы и микшер трогает он же
+			Minecraft.getInstance().execute(() -> {
+				// пока поток открывался и ждал очереди, звук могли остановить
+				if (!pending.remove(instance)) {
+					try { stream.close(); } catch (Exception ignored) { }
+					return;
+				}
+				Source source = Source.streaming(nextId.getAndIncrement(), instance.getIdentifier().toString(),
+					rate, instance.isRelative(), STREAM_BUFFER_SECONDS);
+				source.x = instance.getX();
+				source.y = instance.getY();
+				source.z = instance.getZ();
+				source.volume = volume;
+				source.pitch = pitch;
+				source.impact = false;
+				applyFallback(source);
+				playing.put(instance, source);
+				mixer.add(source);
+				if (verbose) LOG.info("D3Sound: поток {} на ({}, {}, {})", source.name,
+					(int) source.x, (int) source.y, (int) source.z);
+				pumpStream(stream, source, format);
+			});
 		}).exceptionally(error -> {
 			pending.remove(instance);
 			LOG.warn("D3Sound: поток {} не открылся: {}", path, error.toString());
@@ -336,6 +365,45 @@ public final class D3SoundEngine {
 		return 0;
 	}
 
+	/**
+	 * Разобрать короткий звук самим, прямо из потока ресурсов.
+	 *
+	 * Нужно, когда семплы из буфера уже стёрты: игра обнуляет их сразу после
+	 * первой отдачи в OpenAL, и звук, успевший прозвучать до нашего перехвата
+	 * (или до включения мода на ходу), иначе пропадал бы навсегда.
+	 */
+	private static Pcm decodeFromStream(AudioStream stream) {
+		try (AudioStream open = stream) {
+			AudioFormat format = open.getFormat();
+			int rate = (int) format.getSampleRate();
+			int bytesPerFrame = Math.max(1, format.getChannels() * format.getSampleSizeInBits() / 8);
+			int chunkFrames = Math.max(1024, Math.round(rate * 0.5f));
+			int chunkBytes = chunkFrames * bytesPerFrame;
+			float[] out = new float[Math.max(1024, rate)];
+			float[] scratch = new float[chunkFrames + 16];
+			int filled = 0;
+			while (true) {
+				ByteBuffer data = open.read(chunkBytes);
+				if (data == null || !data.hasRemaining()) break;
+				// декодер дочитывает пакет до конца и может отдать больше, чем просили
+				int available = data.remaining() / bytesPerFrame;
+				if (scratch.length < available) scratch = new float[available];
+				int frames = toMono(data, format, scratch);
+				if (frames <= 0) break;
+				if (filled + frames > out.length) {
+					out = java.util.Arrays.copyOf(out, Math.max(filled + frames, out.length * 2));
+				}
+				System.arraycopy(scratch, 0, out, filled, frames);
+				filled += frames;
+			}
+			if (filled == 0) return null;
+			return new Pcm(filled == out.length ? out : java.util.Arrays.copyOf(out, filled), rate);
+		} catch (Throwable error) {
+			LOG.warn("D3Sound: свой разбор звука не удался: {}", error.toString());
+			return null;
+		}
+	}
+
 	private static Pcm decode(com.mojang.blaze3d.audio.SoundBuffer buffer) {
 		ByteBuffer data = ((SoundBufferAccessor) buffer).d3sound$data();
 		if (data == null) return null;
@@ -394,10 +462,16 @@ public final class D3SoundEngine {
 		}
 
 		applyConfig();
+		boolean wasUnderwater = listenerUnderwater;
+		boolean wasInLava = listenerInLava;
 		listenerUnderwater = client.player != null && client.player.isEyeInFluid(FluidTags.WATER);
 		listenerInLava = client.player != null && client.player.isEyeInFluid(FluidTags.LAVA);
 
-		if (++tickCounter % 20 == 0) mixer.air = airOf(level);
+		// среда меняется медленно, кроме одного случая: голова ушла под воду или в
+		// лаву. Ждать до секунды тут нельзя — это слышно сразу
+		if (++tickCounter % 20 == 0 || listenerUnderwater != wasUnderwater || listenerInLava != wasInLava) {
+			mixer.air = airOf(level);
+		}
 
 		fillSnapshot(level);
 		applySolutions(level);
@@ -445,7 +519,10 @@ public final class D3SoundEngine {
 		if (type == BuiltinDimensionTypes.END) return Air.end();
 		float temp = level.getBiome(BlockPos.containing(mixer.listenerX, mixer.listenerY, mixer.listenerZ))
 			.value().getBaseTemperature();
-		return Air.forWeather(level.isRaining(), level.isThundering() && temp < 0.15f, temp);
+		// снег идёт при обычном дожде, если биом холодный: гроза тут ни при чём
+		boolean raining = level.isRaining();
+		boolean snowing = raining && temp < 0.15f;
+		return Air.forWeather(raining && !snowing, snowing, temp);
 	}
 
 	/* --- снимок мира слоями --- */
@@ -512,7 +589,10 @@ public final class D3SoundEngine {
 			// снимки крутятся по кругу: пока решатель читает один, заполняем
 			// следующий, а третий отдыхает — так куб не выделяется заново
 			VoxelSnapshot next = spare;
-			if (next == null || next.radius != radius) next = new VoxelSnapshot(radius);
+			// снимок, отданный в последний прогон, решатель может читать до сих пор:
+			// длинный прогон переживает цикл заполнения (~6 тиков). Затирать его
+			// нельзя — берём под заполнение новый куб
+			if (next == null || next.radius != radius || next == submitted) next = new VoxelSnapshot(radius);
 			spare = ready;
 			ready = filling;
 			filling = next;
@@ -644,6 +724,7 @@ public final class D3SoundEngine {
 		long now = System.currentTimeMillis();
 		if (now - lastSubmit < budget.intervalMs()) return;
 		lastSubmit = now;
+		submitted = snapshot;
 
 		List<Source> list = new ArrayList<>(playing.values());
 		list.removeIf(s -> s.finished || s.relative || !snapshot.covers(s.x, s.y, s.z));
@@ -681,12 +762,21 @@ public final class D3SoundEngine {
 			Source source = entry.getValue();
 			if (source.finished) { playing.remove(instance); solver.forget(source.id); continue; }
 
-			// звук, который сам себя остановил (мобы, вагонетки, маяк), игра нам
-			// уже не отдаст — снимаем его здесь
-			if (instance instanceof net.minecraft.client.resources.sounds.TickableSoundInstance tickable
-				&& tickable.isStopped()) {
-				stop(instance);
-				continue;
+			// тикающие звуки (вагонетка, элитра, пчела, маяк, портал) ванильный
+			// движок нам не тикает: play мы отменяем, и в его список тикающих звук
+			// не попадает. Значит, ни позиция, ни громкость у них не менялись бы, и
+			// isStopped никогда бы не стал true. Тикаем сами — на игровом потоке,
+			// ровно там же, где это делает ваниль, и раз в тик
+			if (instance instanceof net.minecraft.client.resources.sounds.TickableSoundInstance tickable) {
+				try {
+					tickable.tick();
+				} catch (Throwable error) {
+					// чужой звук не должен ронять игру: снимаем его и живём дальше
+					LOG.warn("D3Sound: {} упал на тике: {}", source.name, error.toString());
+					stop(instance);
+					continue;
+				}
+				if (tickable.isStopped()) { stop(instance); continue; }
 			}
 
 			// музыка и эмбиент: положения в мире у них нет, но среда на них влияет
@@ -694,7 +784,9 @@ public final class D3SoundEngine {
 				if (soundEngine != null) {
 					SoundEngineAccessor accessor = (SoundEngineAccessor) soundEngine;
 					float live = accessor.d3sound$calculateVolume(instance);
-					if (live > 0) source.volume = live; else source.stopping = true;
+					// временный ноль (ползунок туда-обратно, затухание музыки) — это
+					// молчание, а не конец звука: ваниль в таком случае просто молчит
+					source.volume = Math.max(0f, live);
 					source.pitch = accessor.d3sound$calculatePitch(instance);
 				}
 				applyLocal(source);
@@ -709,7 +801,7 @@ public final class D3SoundEngine {
 			if (soundEngine != null) {
 				SoundEngineAccessor accessor = (SoundEngineAccessor) soundEngine;
 				float live = accessor.d3sound$calculateVolume(instance);
-				if (live > 0) source.volume = live; else source.stopping = true;
+				source.volume = Math.max(0f, live);
 				source.pitch = accessor.d3sound$calculatePitch(instance);
 			}
 
@@ -719,7 +811,16 @@ public final class D3SoundEngine {
 			boolean crossesSurface = sourceUnderwater != listenerUnderwater;
 
 			Solution solution = solver.solutionFor(source.id);
-			if (solution == null || solution.tapCount == 0) { applyFallback(source); continue; }
+			// решателя ещё нет — играем прямой путь, чтобы звук не пропал
+			if (solution == null) { applyFallback(source); continue; }
+			// а вот пустое решение — это честный ответ: путей нет. Раньше мы и его
+			// подменяли прямым звуком, и за глухой стеной было слышно как в поле
+			if (solution.tapCount == 0) {
+				for (int t = 0; t < Source.MAX_TAPS; t++) source.taps[t].active = false;
+				source.tapCount = 0;
+				source.targetSend = solution.tailLevel;
+				continue;
+			}
 
 			int count = Math.min(solution.tapCount, Source.MAX_TAPS);
 			for (int t = 0; t < count; t++) {
@@ -734,7 +835,11 @@ public final class D3SoundEngine {
 					distance = (float) Math.sqrt(wx * wx + wy * wy + wz * wz);
 					dx = (float) wx; dy = (float) wy; dz = (float) wz;
 					float spread = Solver.spread(distance);
-					for (int b = 0; b < Materials.BAND_COUNT; b++) bandBuffer[b] = spread;
+					// перекрытие прямого пути (листва, забор, приоткрытая дверь) —
+					// решение решателя, и терять его при пересчёте нельзя
+					for (int b = 0; b < Materials.BAND_COUNT; b++) {
+						bandBuffer[b] = spread * Solver.directFactor(solution.coverage, b);
+					}
 				} else {
 					System.arraycopy(solution.bands[t], 0, bandBuffer, 0, Materials.BAND_COUNT);
 				}
