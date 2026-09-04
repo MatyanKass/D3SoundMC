@@ -35,6 +35,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.ShortBuffer;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -73,7 +74,7 @@ public final class D3SoundEngine {
 	private final float[] bandBuffer = new float[Materials.BAND_COUNT];
 
 	private final Map<SoundInstance, Source> playing = new ConcurrentHashMap<>();
-	private final Map<Identifier, Pcm> pcmCache = new ConcurrentHashMap<>();
+	private final PcmCache pcmCache = new PcmCache(96 << 20);
 	/**
 	 * Звуки, которые мы забрали, но ещё не запустили.
 	 *
@@ -106,6 +107,43 @@ public final class D3SoundEngine {
 	private long lastSubmit;
 
 	private record Pcm(float[] samples, int sampleRate) {}
+
+	/**
+	 * Распакованные звуки с потолком по памяти.
+	 *
+	 * Без потолка кэш растёт весь сеанс: длинных звуков в ресурспаках хватает,
+	 * а держать их все незачем. Выкидываем те, к которым дольше всего не
+	 * обращались. Ходят сюда игровой поток и потоки распаковки, поэтому всё
+	 * под замком.
+	 */
+	private static final class PcmCache {
+		private final long limitBytes;
+		private long bytes;
+		private final LinkedHashMap<Identifier, Pcm> map =
+			new LinkedHashMap<>(64, 0.75f, true);
+
+		PcmCache(long limitBytes) { this.limitBytes = limitBytes; }
+
+		synchronized Pcm get(Identifier key) { return map.get(key); }
+
+		synchronized void put(Identifier key, Pcm pcm) {
+			Pcm old = map.put(key, pcm);
+			if (old != null) bytes -= sizeOf(old);
+			bytes += sizeOf(pcm);
+			// самые старые по обращению уходят первыми
+			java.util.Iterator<Map.Entry<Identifier, Pcm>> it = map.entrySet().iterator();
+			while (bytes > limitBytes && it.hasNext()) {
+				Map.Entry<Identifier, Pcm> eldest = it.next();
+				if (eldest.getValue() == pcm) continue;
+				bytes -= sizeOf(eldest.getValue());
+				it.remove();
+			}
+		}
+
+		synchronized void clear() { map.clear(); bytes = 0; }
+
+		private static long sizeOf(Pcm pcm) { return (long) pcm.samples().length * 4L; }
+	}
 
 	public Mixer mixer() { return mixer; }
 	public Budget budget() { return budget; }
@@ -456,7 +494,11 @@ public final class D3SoundEngine {
 		Level level = client.level;
 		if (level == null) return;
 
-		if (client.player != null) {
+		// позицию слушателя ведёт камера (mixin updateSource): в третьем лице
+		// камера и игрок расходятся, и два источника дёргали бы её каждый тик.
+		// Игрока берём только до первого кадра, пока камеры ещё не было
+		if (client.player != null && mixer.listenerX == 0 && mixer.listenerY == 0 && mixer.listenerZ == 0
+			&& mixer.listenerYaw == 0 && mixer.listenerPitch == 0) {
 			updateListener(client.player.getX(), client.player.getEyeY(), client.player.getZ(),
 				client.player.getYRot(), client.player.getXRot());
 		}
@@ -1034,6 +1076,9 @@ public final class D3SoundEngine {
 		if (pump != null) { pump.shutdownNow(); pump = null; }
 		if (streamPump != null) { streamPump.shutdownNow(); streamPump = null; }
 		output = null;
+		// заказ канала мог остаться висеть: без сброса после destroy/reload
+		// вывод больше никогда не поднимется
+		openingOutput = false;
 		pcmCache.clear();
 	}
 

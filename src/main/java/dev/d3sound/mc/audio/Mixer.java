@@ -24,6 +24,14 @@ public final class Mixer {
 	private final float aLow;
 	private final float aHigh;
 	private float smoothing;
+	/**
+	 * Отдельное, медленное сглаживание для задержек отвода.
+	 *
+	 * Решение обновляется раз в 70–260 мс, и задержка прямого пути прыгает
+	 * на весь скачок расстояния. Пройденный за 4 мс, такой скачок слышен как
+	 * «чирп» доплера; за 60 мс он расползается в плавный сдвиг высоты.
+	 */
+	private float delaySmoothing;
 
 	private float[] sendBus = new float[1024];
 	private float wet = 0.6f;
@@ -38,6 +46,7 @@ public final class Mixer {
 		aLow = onePole(XOVER_LOW);
 		aHigh = onePole(XOVER_HIGH);
 		smoothing = 1f - (float) Math.exp(-1.0 / (0.004 * SAMPLE_RATE));
+		delaySmoothing = 1f - (float) Math.exp(-1.0 / (0.060 * SAMPLE_RATE));
 	}
 
 	private static float onePole(float cutoff) {
@@ -100,7 +109,7 @@ public final class Mixer {
 
 		List<Source> done = null;
 		for (Source s : sources) {
-			s.mix(outL, outR, sendBus, frames, SAMPLE_RATE, aLow, aHigh, smoothing);
+			s.mix(outL, outR, sendBus, frames, SAMPLE_RATE, aLow, aHigh, smoothing, delaySmoothing);
 			if (s.finished) {
 				if (done == null) done = new ArrayList<>(2);
 				done.add(s);

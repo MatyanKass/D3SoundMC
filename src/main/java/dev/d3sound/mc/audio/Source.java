@@ -139,10 +139,12 @@ public final class Source {
 	 *
 	 * @param aLow    коэффициент нижнего раздела полос
 	 * @param aHigh   коэффициент верхнего раздела
-	 * @param kSmooth скорость сглаживания параметров
+	 * @param kSmooth скорость сглаживания усилений
+	 * @param kDelay  скорость сглаживания задержек — заметно медленнее, иначе
+	 *                скачок расстояния при новом решении слышен как «чирп»
 	 */
 	public void mix(float[] outL, float[] outR, float[] sendBus, int frames,
-	                int outRate, float aLow, float aHigh, float kSmooth) {
+	                int outRate, float aLow, float aHigh, float kSmooth, float kDelay) {
 		if (finished) return;
 
 		final double rate = (double) sampleRate / outRate * Math.max(0.05f, pitch);
@@ -161,8 +163,8 @@ public final class Source {
 
 				float dl = tap.targetDelayLeft * sampleRate;
 				float dr = tap.targetDelayRight * sampleRate;
-				tap.delayLeft += (dl - tap.delayLeft) * kSmooth;
-				tap.delayRight += (dr - tap.delayRight) * kSmooth;
+				tap.delayLeft += (dl - tap.delayLeft) * kDelay;
+				tap.delayRight += (dr - tap.delayRight) * kDelay;
 
 				float gl0 = tap.gainLeft[0] += (tap.targetGainLeft[0] * vol - tap.gainLeft[0]) * kSmooth;
 				float gl1 = tap.gainLeft[1] += (tap.targetGainLeft[1] * vol - tap.gainLeft[1]) * kSmooth;
@@ -171,7 +173,14 @@ public final class Source {
 				float gr1 = tap.gainRight[1] += (tap.targetGainRight[1] * vol - tap.gainRight[1]) * kSmooth;
 				float gr2 = tap.gainRight[2] += (tap.targetGainRight[2] * vol - tap.gainRight[2]) * kSmooth;
 
-				if (gl0 + gl1 + gl2 + gr0 + gr1 + gr2 < 1e-6f) continue;
+				if (gl0 + gl1 + gl2 + gr0 + gr1 + gr2 < 1e-6f) {
+					// семплы не читаем, но состояния фильтров не морозим: иначе
+					// при возврате усиления фильтр стартует со старого значения
+					// и это слышно щелчком
+					tap.loL *= 0.99f; tap.miL *= 0.99f;
+					tap.loR *= 0.99f; tap.miR *= 0.99f;
+					continue;
+				}
 
 				float sl = sample(cursor - tap.delayLeft);
 				tap.loL += aLow * (sl - tap.loL);

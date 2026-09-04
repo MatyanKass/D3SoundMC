@@ -774,7 +774,7 @@ public final class Bench {
         for (int block = 0; block < 60; block++) {
 			if (source.written() - source.played() < 4096) { source.append(chunk, chunk.length); fed++; }
 			java.util.Arrays.fill(l, 0f); java.util.Arrays.fill(r, 0f);
-			source.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f);
+			source.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f, 1f);
 			for (int i = 0; i < 512; i++) loudest = Math.max(loudest, Math.abs(l[i]));
 		}
 		System.out.printf("  подано %d порций, всего %d семплов, проиграно %d%n",
@@ -791,7 +791,7 @@ public final class Bench {
 		source.markComplete();
 		boolean ended = false;
 		for (int block = 0; block < 400 && !ended; block++) {
-			source.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f);
+			source.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f, 1f);
 			ended = source.finished;
 		}
 		expect("после конца потока источник закрывается", ended, "закрылся");
@@ -802,7 +802,7 @@ public final class Bench {
 		stuck.tapCount = 1;
 		boolean dropped = false;
 		for (int block = 0; block < 2000 && !dropped; block++) {
-			stuck.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f);
+			stuck.mix(l, r, bus, 512, rate, 0.05f, 0.4f, 1f, 1f);
 			dropped = stuck.finished;
 		}
 		expect("зависший поток не живёт вечно", dropped, "снят");

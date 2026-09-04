@@ -119,7 +119,9 @@ public final class Structure {
 			for (int oy = -2; oy <= 2; oy++) {
 				for (int oz = -2; oz <= 2; oz++) {
 					int x = cx + ox, y = cy + oy, z = cz + oz;
-					if (!world.inside(x, y, z) || !world.solid(x, y, z)) continue;
+					// вода тоже «не воздух», но конструкцией она не является:
+					// по ней структурный звук не идёт
+					if (!world.inside(x, y, z) || !world.solid(x, y, z) || world.water(x, y, z)) continue;
 					float gap = (float) Math.sqrt(ox * ox + oy * oy + oz * oz);
 					int i = world.index(x, y, z);
 					// чем дальше поверхность от уха, тем тише её отдача в воздух
@@ -153,7 +155,7 @@ public final class Structure {
 				int nx = x + DX[n], ny = y + DY[n], nz = z + DZ[n];
 				if (!world.inside(nx, ny, nz)) continue;
 				byte id = world.local(nx, ny, nz);
-				if (id == VoxelSnapshot.AIR) continue;
+				if (id == VoxelSnapshot.AIR || id == VoxelSnapshot.WATER) continue;
 				Materials next = Materials.values()[id];
 				// пористый блок и держится хуже, и передаёт хуже
 				float fill = Math.max(0.1f, world.fill(nx, ny, nz));

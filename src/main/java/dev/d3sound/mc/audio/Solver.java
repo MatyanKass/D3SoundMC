@@ -544,7 +544,8 @@ public final class Solver {
 			for (int oy = -2; oy <= 2; oy++) {
 				for (int oz = -2; oz <= 2; oz++) {
 					int x = sx + ox, y = sy + oy, z = sz + oz;
-					if (!world.inside(x, y, z) || !world.solid(x, y, z)) continue;
+					// вода не конструкция: раскачивать в ней нечего
+					if (!world.inside(x, y, z) || !world.solid(x, y, z) || world.water(x, y, z)) continue;
 					int i = world.index(x, y, z);
 					if (!structure.reachable(i)) continue;
 					float gap = (float) Math.sqrt(ox * ox + oy * oy + oz * oz);
