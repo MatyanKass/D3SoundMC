@@ -96,6 +96,11 @@
 
 Нужен JDK 25 (Minecraft 26.x на нём). Путь прописан в `gradle.properties`.
 
+## Журнал версий
+
+Что менялось от версии к версии — в [CHANGELOG.md](CHANGELOG.md); там же
+объяснено, почему. Сборки лежат в [релизах](https://github.com/MatyanKass/D3SoundMC/releases).
+
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE).

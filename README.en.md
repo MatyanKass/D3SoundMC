@@ -102,6 +102,12 @@ audio through the speakers.
 Requires JDK 25 (Minecraft 26.x runs on it). The path is set in
 `gradle.properties`.
 
+## Changelog
+
+What changed between versions, and why, is in
+[CHANGELOG.en.md](CHANGELOG.en.md). Builds live in
+[releases](https://github.com/MatyanKass/D3SoundMC/releases).
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
